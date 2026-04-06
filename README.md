@@ -1,41 +1,48 @@
 # Mamba 🐍
 
-A Python DSL (Domain-Specific Language) built from scratch in Python.
+A Python interpreter written in Python. Long-term goal: run real `.py` files
+the same way CPython would.
 
 ## Status
 
-**Work in progress** — currently in the early stages of development.
+**Work in progress.** Currently only the lexer is implemented. The interpreter
+is being built bottom-up: lexer → parser → AST evaluator → scoping/functions →
+classes → exceptions → modules → builtins → stdlib.
 
-### What's done so far
+### What's done
 
-- **Lexer** (`src/lexer.py`): Tokenizes source code into a stream of tokens. Supports:
-  - Numbers (integers and floats)
-  - Strings (single and double quoted)
-  - Names/identifiers
-  - Operators: `+`, `-`, `*`, `/`, `=`
-  - Delimiters: `(`, `)`, `:`
-  - Newlines as significant tokens
+- **Lexer** (`src/lexer.py`): tokenizes Python source.
+  - Numbers (int, float), strings, names
+  - Operators: `+ - * / = == != < > <= >=`
+  - Delimiters: `( ) [ ] { } , . :`
+  - Keywords: `if elif else while for in def return pass break continue and or not True False None`
+  - `INDENT` / `DEDENT` with an indentation stack
+  - Newlines suppressed inside `() [] {}`
+  - Comments (`#`) and line continuation (`\`)
 
-### What's next
+### Next up
 
-- Parser (AST generation)
-- Interpreter / code execution
-- Keywords and control flow (`if`, `while`, `def`, etc.)
-- Error handling system
+- Parser → AST
+- Tree-walking evaluator (subset)
+- Scoping and function calls
+- `tests/` with CPython as oracle (run a `.py` in both, compare output)
 
-## Project Structure
+## Project layout
 
 ```
 Mamba/
-├── main.py          # Entry point
+├── main.py          # CLI entry point (file runner + REPL)
+├── examples/
+│   └── hello.py     # Sample Python program the lexer can chew on
 ├── src/
-│   ├── lexer.py     # Tokenizer / lexical analysis
-│   └── errors.py    # Error handling (WIP)
+│   ├── lexer.py
+│   └── errors.py    # (WIP)
 └── README.md
 ```
 
 ## Running
 
 ```bash
-python main.py
+python3 main.py examples/hello.py   # tokenize a file
+python3 main.py                     # REPL
 ```
