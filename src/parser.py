@@ -395,6 +395,25 @@ class Parser:
             return
         args.append(self.expr())
 
+    def _parse_comp_clauses(self, end_tok):
+        gens = []
+        while self.match(TokenType.FOR):
+            target = ast.Name(self.expect(TokenType.NAME).value)
+            if self.check(TokenType.COMMA):
+                elts = [target]
+                while self.match(TokenType.COMMA):
+                    if self.check(TokenType.IN):
+                        break
+                    elts.append(ast.Name(self.expect(TokenType.NAME).value))
+                target = ast.TupleLit(elts)
+            self.expect(TokenType.IN)
+            iter_ = self.or_expr()  # avoid swallowing trailing 'for' / 'if'
+            ifs = []
+            while self.match(TokenType.IF):
+                ifs.append(self.or_expr())
+            gens.append(ast.CompFor(target, iter_, ifs))
+        return gens
+
     def _parse_subscript(self):
         # supports: expr | [expr]:[expr][:[expr]]
         start = stop = step = None
@@ -457,23 +476,32 @@ class Parser:
             return e
         if tok.type == TokenType.LBRACK:
             self.advance()
-            elts = []
-            if not self.check(TokenType.RBRACK):
+            if self.match(TokenType.RBRACK):
+                return ast.ListLit([])
+            first = self.expr()
+            if self.check(TokenType.FOR):
+                gens = self._parse_comp_clauses(TokenType.RBRACK)
+                self.expect(TokenType.RBRACK)
+                return ast.ListComp(first, gens)
+            elts = [first]
+            while self.match(TokenType.COMMA):
+                if self.check(TokenType.RBRACK):
+                    break
                 elts.append(self.expr())
-                while self.match(TokenType.COMMA):
-                    if self.check(TokenType.RBRACK):
-                        break
-                    elts.append(self.expr())
             self.expect(TokenType.RBRACK)
             return ast.ListLit(elts)
         if tok.type == TokenType.LBRACE:
             self.advance()
-            pairs = []
-            if not self.check(TokenType.RBRACE):
-                k = self.expr()
-                self.expect(TokenType.COLON)
-                v = self.expr()
-                pairs.append((k, v))
+            if self.match(TokenType.RBRACE):
+                return ast.DictLit([])
+            first = self.expr()
+            if self.match(TokenType.COLON):
+                first_v = self.expr()
+                if self.check(TokenType.FOR):
+                    gens = self._parse_comp_clauses(TokenType.RBRACE)
+                    self.expect(TokenType.RBRACE)
+                    return ast.DictComp(first, first_v, gens)
+                pairs = [(first, first_v)]
                 while self.match(TokenType.COMMA):
                     if self.check(TokenType.RBRACE):
                         break
@@ -481,8 +509,20 @@ class Parser:
                     self.expect(TokenType.COLON)
                     v = self.expr()
                     pairs.append((k, v))
+                self.expect(TokenType.RBRACE)
+                return ast.DictLit(pairs)
+            # set literal or set comprehension
+            if self.check(TokenType.FOR):
+                gens = self._parse_comp_clauses(TokenType.RBRACE)
+                self.expect(TokenType.RBRACE)
+                return ast.SetComp(first, gens)
+            elts = [first]
+            while self.match(TokenType.COMMA):
+                if self.check(TokenType.RBRACE):
+                    break
+                elts.append(self.expr())
             self.expect(TokenType.RBRACE)
-            return ast.DictLit(pairs)
+            return ast.SetLit(elts)
         raise self.error(
             f"unexpected token {tok.type.name} ({tok.value!r})"
         )

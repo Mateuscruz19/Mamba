@@ -118,6 +118,41 @@ class TupleLit(Node):
     def __repr__(self): return f"TupleLit({self.elts})"
 
 
+class SetLit(Node):
+    def __init__(self, elts): self.elts = elts
+    def __repr__(self): return f"SetLit({self.elts})"
+
+
+class CompFor(Node):
+    """One `for target in iter (if cond)*` clause inside a comprehension."""
+    def __init__(self, target, iter, ifs):
+        self.target = target
+        self.iter = iter
+        self.ifs = ifs  # list[expr]
+
+
+class ListComp(Node):
+    def __init__(self, element, generators):
+        self.element = element
+        self.generators = generators  # list[CompFor]
+    def __repr__(self): return f"ListComp({self.element}, {self.generators})"
+
+
+class SetComp(Node):
+    def __init__(self, element, generators):
+        self.element = element
+        self.generators = generators
+    def __repr__(self): return f"SetComp({self.element}, {self.generators})"
+
+
+class DictComp(Node):
+    def __init__(self, key, value, generators):
+        self.key = key
+        self.value = value
+        self.generators = generators
+    def __repr__(self): return f"DictComp({self.key}, {self.value}, {self.generators})"
+
+
 # ---------- statements ----------
 
 class ExprStmt(Node):

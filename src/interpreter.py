@@ -520,6 +520,40 @@ class Interpreter:
     def expr_DictLit(self, node, env):
         return {self.eval_expr(k, env): self.eval_expr(v, env) for k, v in node.pairs}
 
+    def expr_SetLit(self, node, env):
+        return {self.eval_expr(e, env) for e in node.elts}
+
+    def expr_ListComp(self, node, env):
+        out = []
+        self._run_comp(node.generators, 0, env,
+                       lambda e: out.append(self.eval_expr(node.element, e)))
+        return out
+
+    def expr_SetComp(self, node, env):
+        out = set()
+        self._run_comp(node.generators, 0, env,
+                       lambda e: out.add(self.eval_expr(node.element, e)))
+        return out
+
+    def expr_DictComp(self, node, env):
+        out = {}
+        def emit(e):
+            out[self.eval_expr(node.key, e)] = self.eval_expr(node.value, e)
+        self._run_comp(node.generators, 0, env, emit)
+        return out
+
+    def _run_comp(self, generators, i, env, emit):
+        if i == len(generators):
+            emit(env)
+            return
+        gen = generators[i]
+        iterable = self.eval_expr(gen.iter, env)
+        for item in iterable:
+            inner = Environment(parent=env)
+            self._assign_to(gen.target, item, inner)
+            if all(self.truthy(self.eval_expr(c, inner)) for c in gen.ifs):
+                self._run_comp(generators, i + 1, inner, emit)
+
     @staticmethod
     def truthy(value):
         return bool(value)
