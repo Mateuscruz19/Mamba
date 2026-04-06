@@ -9,11 +9,20 @@ from .errors import MambaRuntimeError
 # ---------- environment ----------
 
 class Environment:
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, globals=None):
         self.vars = {}
         self.parent = parent
+        # Module globals: each environment carries a reference so 'global'
+        # writes can find their target. Module-level envs point to themselves.
+        self.globals = globals if globals is not None else self
+        self.global_names = set()
+        self.nonlocal_names = set()
 
     def get(self, name):
+        if name in self.global_names:
+            if name in self.globals.vars:
+                return self.globals.vars[name]
+            raise NameError(f"name {name!r} is not defined")
         if name in self.vars:
             return self.vars[name]
         if self.parent is not None:
@@ -21,6 +30,17 @@ class Environment:
         raise NameError(f"name {name!r} is not defined")
 
     def set(self, name, value):
+        if name in self.global_names:
+            self.globals.vars[name] = value
+            return
+        if name in self.nonlocal_names:
+            env = self.parent
+            while env is not None and env is not self.globals:
+                if name in env.vars:
+                    env.vars[name] = value
+                    return
+                env = env.parent
+            raise SyntaxError(f"no binding for nonlocal {name!r}")
         self.vars[name] = value
 
 
@@ -69,7 +89,7 @@ class Function:
     def call(self, interp, args, kwargs=None):
         kwargs = dict(kwargs or {})
         decl = self.decl
-        env = Environment(parent=self.closure)
+        env = Environment(parent=self.closure, globals=self.closure.globals)
 
         n_params = len(decl.params)
         positional = list(args)
@@ -388,9 +408,17 @@ class Interpreter:
     def stmt_Break(self, node, env): raise BreakSignal()
     def stmt_Continue(self, node, env): raise ContinueSignal()
 
+    def stmt_Global(self, node, env):
+        for name in node.names:
+            env.global_names.add(name)
+
+    def stmt_Nonlocal(self, node, env):
+        for name in node.names:
+            env.nonlocal_names.add(name)
+
     def stmt_ClassDef(self, node, env):
         bases = [self.eval_expr(b, env) for b in node.bases]
-        body_env = Environment(parent=env)
+        body_env = Environment(parent=env, globals=env.globals)
         self.exec_block(node.body, body_env)
         klass = MambaClass(node.name, bases, dict(body_env.vars))
         env.set(node.name, klass)
@@ -695,7 +723,7 @@ class Interpreter:
         gen = generators[i]
         iterable = self.eval_expr(gen.iter, env)
         for item in iterable:
-            inner = Environment(parent=env)
+            inner = Environment(parent=env, globals=env.globals)
             self._assign_to(gen.target, item, inner)
             if all(self.truthy(self.eval_expr(c, inner)) for c in gen.ifs):
                 self._run_comp(generators, i + 1, inner, emit)
