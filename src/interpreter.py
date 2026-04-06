@@ -521,6 +521,22 @@ def _builtin_print(*args, **kwargs):
     print(*args, **kwargs)
 
 
+def _mamba_getattr(obj, name, *default):
+    try:
+        if isinstance(obj, MambaInstance):
+            return obj.get(name)
+        if isinstance(obj, MambaClass):
+            v = obj.lookup(name)
+            if v is None:
+                raise AttributeError(name)
+            return v
+        return getattr(obj, name)
+    except AttributeError:
+        if default:
+            return default[0]
+        raise
+
+
 class StaticMethod:
     def __init__(self, func): self.func = func
 
@@ -570,6 +586,44 @@ BUILTINS = {
         if isinstance(obj, MambaInstance) and isinstance(cls, MambaClass)
         else isinstance(obj, cls)
     ),
+    'all': all,
+    'any': any,
+    'round': round,
+    'chr': chr,
+    'ord': ord,
+    'hex': hex,
+    'bin': bin,
+    'oct': oct,
+    'divmod': divmod,
+    'pow': pow,
+    'set': set,
+    'frozenset': frozenset,
+    'bytes': bytes,
+    'bytearray': bytearray,
+    'complex': complex,
+    'input': input,
+    'open': open,
+    'format': format,
+    'callable': lambda x: (
+        isinstance(x, (Function, BoundMethod, MambaClass)) or callable(x)
+    ),
+    'getattr': lambda *args: _mamba_getattr(*args),
+    'setattr': lambda obj, name, value: (
+        obj.set(name, value) if isinstance(obj, MambaInstance)
+        else setattr(obj, name, value)
+    ),
+    'hasattr': lambda obj, name: (
+        (name in obj._fields or obj._class.lookup(name) is not None)
+        if isinstance(obj, MambaInstance)
+        else (obj.lookup(name) is not None)
+        if isinstance(obj, MambaClass)
+        else hasattr(obj, name)
+    ),
+    'delattr': delattr,
+    'vars': vars,
+    'dir': dir,
+    'slice': slice,
+    'object': object,
     # Built-in exception hierarchy (delegated to Python's own classes)
     'Exception': Exception,
     'BaseException': BaseException,
