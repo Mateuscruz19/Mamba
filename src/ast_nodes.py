@@ -81,6 +81,11 @@ class FString(Node):
     def __repr__(self): return f"FString({self.segments})"
 
 
+class Yield(Node):
+    def __init__(self, value): self.value = value
+    def __repr__(self): return f"Yield({self.value})"
+
+
 class Lambda(Node):
     def __init__(self, params, defaults, body):
         self.params = params

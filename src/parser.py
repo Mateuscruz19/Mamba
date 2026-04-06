@@ -99,6 +99,13 @@ class Parser:
             return self.import_stmt()
         if t == TokenType.FROM:
             return self.from_import_stmt()
+        if t == TokenType.YIELD:
+            self.advance()
+            value = None
+            if not self.check(TokenType.NEWLINE, TokenType.EOF):
+                value = self.expr()
+            self.expect(TokenType.NEWLINE)
+            return ast.ExprStmt(ast.Yield(value))
 
         # expression or assignment (possibly with tuple unpacking)
         e = self.expr()

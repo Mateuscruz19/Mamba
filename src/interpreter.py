@@ -26,11 +26,42 @@ class Environment:
 
 # ---------- callable wrappers ----------
 
+def _body_has_yield(stmts):
+    """Walk statements looking for a Yield, but don't descend into nested
+    function/class/lambda definitions."""
+    for s in stmts:
+        if _node_has_yield(s):
+            return True
+    return False
+
+
+def _node_has_yield(node):
+    if isinstance(node, ast.Yield):
+        return True
+    if isinstance(node, (ast.FunctionDef, ast.Lambda, ast.ClassDef)):
+        return False
+    if not isinstance(node, ast.Node):
+        return False
+    for attr in vars(node).values():
+        if isinstance(attr, list):
+            for x in attr:
+                if isinstance(x, ast.Node) and _node_has_yield(x):
+                    return True
+                if isinstance(x, tuple):
+                    for y in x:
+                        if isinstance(y, ast.Node) and _node_has_yield(y):
+                            return True
+        elif isinstance(attr, ast.Node) and _node_has_yield(attr):
+            return True
+    return False
+
+
 class Function:
     def __init__(self, decl, closure, interp=None):
         self.decl = decl
         self.closure = closure
         self.interp = interp  # set so Python callers (map/filter/sorted) work
+        self.is_generator = _body_has_yield(decl.body)
 
     def __call__(self, *args, **kwargs):
         return self.call(self.interp, list(args), kwargs)
@@ -78,6 +109,14 @@ class Function:
                 f"{decl.name}() got unexpected keyword argument "
                 f"{next(iter(kwargs))!r}"
             )
+
+        if self.is_generator:
+            def _gen():
+                try:
+                    yield from interp.gen_exec_block(decl.body, env)
+                except ReturnSignal:
+                    return
+            return _gen()
 
         try:
             interp.exec_block(decl.body, env)
@@ -420,6 +459,50 @@ class Interpreter:
         mod = Module(name, sub.globals)
         self._module_cache[name] = mod
         return mod
+
+    # ---------- generator-aware execution ----------
+
+    def gen_exec_block(self, stmts, env):
+        for s in stmts:
+            yield from self.gen_exec_stmt(s, env)
+
+    def gen_exec_stmt(self, node, env):
+        # yield as a statement
+        if isinstance(node, ast.ExprStmt) and isinstance(node.expr, ast.Yield):
+            v = self.eval_expr(node.expr.value, env) if node.expr.value is not None else None
+            yield v
+            return
+        # control flow that may contain yields
+        if isinstance(node, ast.If):
+            target = node.body if self.truthy(self.eval_expr(node.test, env)) else node.orelse
+            yield from self.gen_exec_block(target, env)
+            return
+        if isinstance(node, ast.While):
+            while self.truthy(self.eval_expr(node.test, env)):
+                try:
+                    yield from self.gen_exec_block(node.body, env)
+                except BreakSignal:
+                    break
+                except ContinueSignal:
+                    continue
+            return
+        if isinstance(node, ast.For):
+            iterable = self.eval_expr(node.iter, env)
+            for item in iterable:
+                self._assign_to(node.target, item, env)
+                try:
+                    yield from self.gen_exec_block(node.body, env)
+                except BreakSignal:
+                    break
+                except ContinueSignal:
+                    continue
+            return
+        if isinstance(node, ast.Try):
+            # Defer to plain exec — yields inside try blocks are not supported.
+            self.exec_stmt(node, env)
+            return
+        # leaf / non-yielding stmt: just execute it
+        self.exec_stmt(node, env)
 
     # ---------- expressions ----------
 
