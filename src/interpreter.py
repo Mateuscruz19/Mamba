@@ -211,6 +211,90 @@ class MambaInstance:
     def set(self, name, value):
         self._fields[name] = value
 
+    def _has(self, name):
+        return name in self._fields or self._class.lookup(name) is not None
+
+    # Make Mamba instances cooperate with Python protocols by delegating to
+    # dunder methods defined on the Mamba class.
+
+    def __iter__(self):
+        if not self._has('__iter__'):
+            raise TypeError(f"'{self._class.name}' object is not iterable")
+        it = self.get('__iter__')()
+        return _IterAdapter(it)
+
+    def __len__(self):
+        if not self._has('__len__'):
+            raise TypeError(f"object of type '{self._class.name}' has no len()")
+        return self.get('__len__')()
+
+    def __bool__(self):
+        if self._has('__bool__'):
+            return bool(self.get('__bool__')())
+        if self._has('__len__'):
+            return self.get('__len__')() != 0
+        return True
+
+    def __getitem__(self, key):
+        if not self._has('__getitem__'):
+            raise TypeError(f"'{self._class.name}' object is not subscriptable")
+        return self.get('__getitem__')(key)
+
+    def __setitem__(self, key, value):
+        if not self._has('__setitem__'):
+            raise TypeError(
+                f"'{self._class.name}' object does not support item assignment"
+            )
+        self.get('__setitem__')(key, value)
+
+    def __contains__(self, item):
+        if self._has('__contains__'):
+            return bool(self.get('__contains__')(item))
+        # Fall back to iteration
+        for x in self:
+            if x == item:
+                return True
+        return False
+
+    def __call__(self, *args, **kwargs):
+        if not self._has('__call__'):
+            raise TypeError(f"'{self._class.name}' object is not callable")
+        method = self.get('__call__')
+        return method(*args, **kwargs)
+
+    def __str__(self):
+        if self._has('__str__'):
+            return str(self.get('__str__')())
+        if self._has('__repr__'):
+            return str(self.get('__repr__')())
+        return f"<{self._class.name} object>"
+
+    def __repr__(self):
+        if self._has('__repr__'):
+            return str(self.get('__repr__')())
+        return f"<{self._class.name} object>"
+
+
+class _IterAdapter:
+    """Wraps a Mamba iterator object so Python's `for` can iterate over it."""
+    def __init__(self, mamba_iter):
+        self.it = mamba_iter
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            if isinstance(self.it, MambaInstance):
+                return self.it.get('__next__')()
+            return next(self.it)
+        except MambaException as me:
+            inst = me.instance
+            if (isinstance(inst, MambaInstance)
+                    and inst._class.name == 'StopIteration'):
+                raise StopIteration
+            raise
+
 
 class Module:
     def __init__(self, name, env):
@@ -270,6 +354,12 @@ BUILTINS = {
     'sorted': sorted,
     'reversed': reversed,
     'enumerate': enumerate,
+    'iter': iter,
+    'next': next,
+    'hash': hash,
+    'id': id,
+    'type': type,
+    'repr': repr,
     'zip': zip,
     'map': map,
     'filter': filter,
@@ -427,6 +517,8 @@ class Interpreter:
         value = self.eval_expr(node.exc, env)
         if isinstance(value, MambaClass):
             value = value.call(self, [])
+        if isinstance(value, type) and issubclass(value, BaseException):
+            value = value()
         if isinstance(value, MambaInstance):
             raise MambaException(value)
         if isinstance(value, BaseException):
