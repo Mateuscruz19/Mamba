@@ -1,16 +1,50 @@
-# This is a sample Python script.
+import os
+import sys
 
-# Press Ctrl+F5 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press F9 to toggle the breakpoint.
+from src.lexer import Lexer
+from src.parser import Parser
+from src.interpreter import Interpreter
+from src.errors import MambaError
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
+def run_file(path: str) -> None:
+    with open(path, 'r', encoding='utf-8') as f:
+        source = f.read()
+    try:
+        tokens = Lexer(source).tokenize()
+        tree = Parser(tokens, source=source, file=path).parse()
+        Interpreter(file=os.path.abspath(path)).run(tree)
+    except MambaError as e:
+        print(e.format(), file=sys.stderr)
+        sys.exit(1)
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+
+def repl() -> None:
+    print("Mamba REPL — Ctrl+D to exit")
+    interp = Interpreter()
+    try:
+        while True:
+            line = input(">>> ")
+            if not line.strip():
+                continue
+            try:
+                tokens = Lexer(line + "\n").tokenize()
+                tree = Parser(tokens, source=line).parse()
+                interp.run(tree)
+            except MambaError as e:
+                print(e.format())
+            except Exception as e:
+                print(f"{type(e).__name__}: {e}")
+    except EOFError:
+        print()
+
+
+def main() -> None:
+    if len(sys.argv) > 1:
+        run_file(sys.argv[1])
+    else:
+        repl()
+
+
+if __name__ == "__main__":
+    main()
