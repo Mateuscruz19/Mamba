@@ -81,6 +81,14 @@ class FString(Node):
     def __repr__(self): return f"FString({self.segments})"
 
 
+class Lambda(Node):
+    def __init__(self, params, defaults, body):
+        self.params = params
+        self.defaults = defaults
+        self.body = body  # single expression
+    def __repr__(self): return f"Lambda({self.params}, {self.body})"
+
+
 class Slice(Node):
     def __init__(self, start, stop, step):
         self.start = start

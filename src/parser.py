@@ -296,7 +296,26 @@ class Parser:
     # ---------- expressions ----------
 
     def expr(self):
+        if self.check(TokenType.LAMBDA):
+            return self.lambda_expr()
         return self.or_expr()
+
+    def lambda_expr(self):
+        self.expect(TokenType.LAMBDA)
+        params, defaults = [], []
+        if not self.check(TokenType.COLON):
+            params.append(self.expect(TokenType.NAME).value)
+            defaults.append(
+                self.expr() if self.match(TokenType.ASSIGN) else None
+            )
+            while self.match(TokenType.COMMA):
+                params.append(self.expect(TokenType.NAME).value)
+                defaults.append(
+                    self.expr() if self.match(TokenType.ASSIGN) else None
+                )
+        self.expect(TokenType.COLON)
+        body = self.expr()
+        return ast.Lambda(params, defaults, body)
 
     def or_expr(self):
         left = self.and_expr()

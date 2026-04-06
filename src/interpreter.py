@@ -27,9 +27,13 @@ class Environment:
 # ---------- callable wrappers ----------
 
 class Function:
-    def __init__(self, decl, closure):
+    def __init__(self, decl, closure, interp=None):
         self.decl = decl
         self.closure = closure
+        self.interp = interp  # set so Python callers (map/filter/sorted) work
+
+    def __call__(self, *args, **kwargs):
+        return self.call(self.interp, list(args), kwargs)
 
     def call(self, interp, args, kwargs=None):
         kwargs = dict(kwargs or {})
@@ -86,6 +90,9 @@ class BoundMethod:
     def __init__(self, func, instance):
         self.func = func
         self.instance = instance
+
+    def __call__(self, *args, **kwargs):
+        return self.func.call(self.func.interp, [self.instance] + list(args), kwargs)
 
     def call(self, interp, args, kwargs=None):
         return self.func.call(interp, [self.instance] + list(args), kwargs)
@@ -314,7 +321,7 @@ class Interpreter:
                 continue
 
     def stmt_FunctionDef(self, node, env):
-        env.set(node.name, Function(node, env))
+        env.set(node.name, Function(node, env, interp=self))
 
     def stmt_Return(self, node, env):
         value = self.eval_expr(node.value, env) if node.value is not None else None
@@ -501,6 +508,18 @@ class Interpreter:
         obj = self.eval_expr(node.obj, env)
         idx = self._eval_index(node.index, env)
         return obj[idx]
+
+    def expr_Lambda(self, node, env):
+        body_stmt = ast.Return(node.body)
+        decl = ast.FunctionDef(
+            name='<lambda>',
+            params=list(node.params),
+            defaults=list(node.defaults),
+            vararg=None,
+            kwarg=None,
+            body=[body_stmt],
+        )
+        return Function(decl, env, interp=self)
 
     def expr_FString(self, node, env):
         out = []
