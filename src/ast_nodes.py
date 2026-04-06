@@ -196,13 +196,14 @@ class While(Node):
 
 
 class FunctionDef(Node):
-    def __init__(self, name, params, defaults, vararg, kwarg, body):
+    def __init__(self, name, params, defaults, vararg, kwarg, body, decorators=None):
         self.name = name
         self.params = params      # list[str]
         self.defaults = defaults  # list[expr|None] aligned with params
         self.vararg = vararg      # str or None
         self.kwarg = kwarg        # str or None
         self.body = body
+        self.decorators = decorators or []
     def __repr__(self): return f"FunctionDef({self.name}, {self.params})"
 
 
@@ -250,10 +251,11 @@ class For(Node):
 
 
 class ClassDef(Node):
-    def __init__(self, name, bases, body):
+    def __init__(self, name, bases, body, decorators=None):
         self.name = name
         self.bases = bases    # list[expr]
         self.body = body      # list[stmt]
+        self.decorators = decorators or []
     def __repr__(self): return f"ClassDef({self.name}, {self.bases}, {self.body})"
 
 

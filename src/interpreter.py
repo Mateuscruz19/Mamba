@@ -559,7 +559,17 @@ class Interpreter:
                 continue
 
     def stmt_FunctionDef(self, node, env):
-        env.set(node.name, Function(node, env, interp=self))
+        value = Function(node, env, interp=self)
+        for dec in reversed(node.decorators):
+            value = self.call_value(self.eval_expr(dec, env), [value], {})
+        env.set(node.name, value)
+
+    def call_value(self, fn, args, kwargs):
+        if isinstance(fn, (Function, BoundMethod)):
+            return fn.call(self, args, kwargs)
+        if isinstance(fn, MambaClass):
+            return fn.call(self, args, kwargs)
+        return fn(*args, **kwargs)
 
     def stmt_Return(self, node, env):
         value = self.eval_expr(node.value, env) if node.value is not None else None
@@ -582,7 +592,10 @@ class Interpreter:
         body_env = Environment(parent=env, globals=env.globals)
         self.exec_block(node.body, body_env)
         klass = MambaClass(node.name, bases, dict(body_env.vars))
-        env.set(node.name, klass)
+        value = klass
+        for dec in reversed(node.decorators):
+            value = self.call_value(self.eval_expr(dec, env), [value], {})
+        env.set(node.name, value)
 
     def stmt_Raise(self, node, env):
         value = self.eval_expr(node.exc, env)

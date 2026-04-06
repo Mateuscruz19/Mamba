@@ -72,6 +72,7 @@ class TokenType(Enum):
     WITH = auto()
     GLOBAL = auto()
     NONLOCAL = auto()
+    AT = auto()
     # special
     EOF = auto()
 
@@ -410,6 +411,7 @@ class Lexer:
                 '.': TokenType.DOT,
                 ':': TokenType.COLON,
                 '%': TokenType.MOD,
+                '@': TokenType.AT,
             }
             if ch in single:
                 tt = single[ch]

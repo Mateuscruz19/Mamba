@@ -65,6 +65,7 @@ class Parser:
 
     def statement(self):
         t = self.cur.type
+        if t == TokenType.AT:    return self.decorated()
         if t == TokenType.IF:    return self.if_stmt()
         if t == TokenType.WHILE: return self.while_stmt()
         if t == TokenType.FOR:   return self.for_stmt()
@@ -240,6 +241,21 @@ class Parser:
         self.expect(TokenType.COLON)
         body = self.block()
         return ast.For(target, iter_, body)
+
+    def decorated(self):
+        decorators = []
+        while self.match(TokenType.AT):
+            decorators.append(self.expr())
+            self.expect(TokenType.NEWLINE)
+            self.skip_newlines()
+        if self.check(TokenType.DEF):
+            node = self.func_def()
+        elif self.check(TokenType.CLASS):
+            node = self.class_def()
+        else:
+            raise self.error("expected 'def' or 'class' after decorator")
+        node.decorators = decorators
+        return node
 
     def func_def(self):
         self.expect(TokenType.DEF)
