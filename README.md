@@ -1,6 +1,6 @@
 # Mamba 🐍
 
-A custom programming language built from scratch in Python.
+A Python DSL (Domain-Specific Language) built from scratch in Python.
 
 ## Status
 
