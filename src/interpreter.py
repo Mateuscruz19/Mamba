@@ -258,6 +258,24 @@ BUILTINS = {
         if isinstance(obj, MambaInstance) and isinstance(cls, MambaClass)
         else isinstance(obj, cls)
     ),
+    # Built-in exception hierarchy (delegated to Python's own classes)
+    'Exception': Exception,
+    'BaseException': BaseException,
+    'ValueError': ValueError,
+    'TypeError': TypeError,
+    'KeyError': KeyError,
+    'IndexError': IndexError,
+    'AttributeError': AttributeError,
+    'NameError': NameError,
+    'ZeroDivisionError': ZeroDivisionError,
+    'StopIteration': StopIteration,
+    'RuntimeError': RuntimeError,
+    'NotImplementedError': NotImplementedError,
+    'FileNotFoundError': FileNotFoundError,
+    'OSError': OSError,
+    'ArithmeticError': ArithmeticError,
+    'LookupError': LookupError,
+    'AssertionError': AssertionError,
 }
 
 
@@ -423,6 +441,11 @@ class Interpreter:
         if handler.exc_type is None:
             return True
         target = self.eval_expr(handler.exc_type, env)
+        return self._exc_matches(exc, target)
+
+    def _exc_matches(self, exc, target):
+        if isinstance(target, tuple):
+            return any(self._exc_matches(exc, t) for t in target)
         if isinstance(exc, MambaInstance) and isinstance(target, MambaClass):
             return exc._class.is_subclass_of(target)
         if isinstance(target, type) and isinstance(exc, target):
