@@ -67,6 +67,9 @@ class TokenType(Enum):
     FROM = auto()
     AS = auto()
     IS = auto()
+    LAMBDA = auto()
+    YIELD = auto()
+    WITH = auto()
     # special
     EOF = auto()
 
@@ -98,6 +101,9 @@ KEYWORDS = {
     'from': TokenType.FROM,
     'as': TokenType.AS,
     'is': TokenType.IS,
+    'lambda': TokenType.LAMBDA,
+    'yield': TokenType.YIELD,
+    'with': TokenType.WITH,
 }
 
 
