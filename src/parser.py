@@ -292,15 +292,29 @@ class Parser:
         self.expect(TokenType.CLASS)
         name = self.expect(TokenType.NAME).value
         bases = []
+        metaclass = None
         if self.match(TokenType.LPAREN):
             if not self.check(TokenType.RPAREN):
-                bases.append(self.expr())
+                self._parse_class_arg(bases, lambda m: setattr(self, '_meta', m))
                 while self.match(TokenType.COMMA):
-                    bases.append(self.expr())
+                    if self.check(TokenType.RPAREN):
+                        break
+                    self._parse_class_arg(bases, lambda m: setattr(self, '_meta', m))
             self.expect(TokenType.RPAREN)
+            metaclass = getattr(self, '_meta', None)
+            if hasattr(self, '_meta'):
+                del self._meta
         self.expect(TokenType.COLON)
         body = self.block()
-        return ast.ClassDef(name, bases, body)
+        return ast.ClassDef(name, bases, body, metaclass=metaclass)
+
+    def _parse_class_arg(self, bases, set_meta):
+        if (self.check(TokenType.NAME) and self.cur.value == 'metaclass'
+                and self.peek(1).type == TokenType.ASSIGN):
+            self.advance(); self.advance()
+            set_meta(self.expr())
+            return
+        bases.append(self.expr())
 
     def with_stmt(self):
         self.expect(TokenType.WITH)

@@ -740,7 +740,12 @@ class Interpreter:
         bases = [self.eval_expr(b, env) for b in node.bases]
         body_env = Environment(parent=env, globals=env.globals)
         self.exec_block(node.body, body_env)
-        klass = MambaClass(node.name, bases, dict(body_env.vars))
+        attrs = dict(body_env.vars)
+        if node.metaclass is not None:
+            meta = self.eval_expr(node.metaclass, env)
+            klass = self.call_value(meta, [node.name, bases, attrs], {})
+        else:
+            klass = MambaClass(node.name, bases, attrs)
         value = klass
         for dec in reversed(node.decorators):
             value = self.call_value(self.eval_expr(dec, env), [value], {})

@@ -251,11 +251,12 @@ class For(Node):
 
 
 class ClassDef(Node):
-    def __init__(self, name, bases, body, decorators=None):
+    def __init__(self, name, bases, body, decorators=None, metaclass=None):
         self.name = name
         self.bases = bases    # list[expr]
         self.body = body      # list[stmt]
         self.decorators = decorators or []
+        self.metaclass = metaclass  # expr or None
     def __repr__(self): return f"ClassDef({self.name}, {self.bases}, {self.body})"
 
 
