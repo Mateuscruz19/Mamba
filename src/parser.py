@@ -354,7 +354,13 @@ class Parser:
     def expr(self):
         if self.check(TokenType.LAMBDA):
             return self.lambda_expr()
-        return self.or_expr()
+        node = self.or_expr()
+        if self.match(TokenType.IF):
+            test = self.or_expr()
+            self.expect(TokenType.ELSE)
+            orelse = self.expr()
+            return ast.IfExpr(node, test, orelse)
+        return node
 
     def lambda_expr(self):
         self.expect(TokenType.LAMBDA)

@@ -1066,6 +1066,11 @@ class Interpreter:
         idx = self._eval_index(node.index, env)
         return obj[idx]
 
+    def expr_IfExpr(self, node, env):
+        if self.truthy(self.eval_expr(node.test, env)):
+            return self.eval_expr(node.body, env)
+        return self.eval_expr(node.orelse, env)
+
     def expr_Lambda(self, node, env):
         body_stmt = ast.Return(node.body)
         decl = ast.FunctionDef(

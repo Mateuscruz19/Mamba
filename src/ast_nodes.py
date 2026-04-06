@@ -86,6 +86,14 @@ class Yield(Node):
     def __repr__(self): return f"Yield({self.value})"
 
 
+class IfExpr(Node):
+    def __init__(self, body, test, orelse):
+        self.body = body
+        self.test = test
+        self.orelse = orelse
+    def __repr__(self): return f"IfExpr({self.body} if {self.test} else {self.orelse})"
+
+
 class Lambda(Node):
     def __init__(self, params, defaults, body):
         self.params = params
