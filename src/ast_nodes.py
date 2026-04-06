@@ -219,6 +219,16 @@ class Return(Node):
     def __repr__(self): return f"Return({self.value})"
 
 
+class Global(Node):
+    def __init__(self, names): self.names = names
+    def __repr__(self): return f"Global({self.names})"
+
+
+class Nonlocal(Node):
+    def __init__(self, names): self.names = names
+    def __repr__(self): return f"Nonlocal({self.names})"
+
+
 class Pass(Node):
     def __repr__(self): return "Pass"
 

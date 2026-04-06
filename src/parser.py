@@ -100,6 +100,14 @@ class Parser:
             return self.import_stmt()
         if t == TokenType.FROM:
             return self.from_import_stmt()
+        if t in (TokenType.GLOBAL, TokenType.NONLOCAL):
+            ctor = ast.Global if t == TokenType.GLOBAL else ast.Nonlocal
+            self.advance()
+            names = [self.expect(TokenType.NAME).value]
+            while self.match(TokenType.COMMA):
+                names.append(self.expect(TokenType.NAME).value)
+            self.expect(TokenType.NEWLINE)
+            return ctor(names)
         if t == TokenType.YIELD:
             self.advance()
             value = None

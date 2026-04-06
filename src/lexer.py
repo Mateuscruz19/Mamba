@@ -70,6 +70,8 @@ class TokenType(Enum):
     LAMBDA = auto()
     YIELD = auto()
     WITH = auto()
+    GLOBAL = auto()
+    NONLOCAL = auto()
     # special
     EOF = auto()
 
@@ -104,6 +106,8 @@ KEYWORDS = {
     'lambda': TokenType.LAMBDA,
     'yield': TokenType.YIELD,
     'with': TokenType.WITH,
+    'global': TokenType.GLOBAL,
+    'nonlocal': TokenType.NONLOCAL,
 }
 
 
