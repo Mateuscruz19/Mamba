@@ -182,46 +182,131 @@ class Function:
 
 
 class BoundMethod:
-    def __init__(self, func, instance):
+    def __init__(self, func, instance, defining_class=None):
         self.func = func
         self.instance = instance
+        self.defining_class = defining_class
+
+    def _push(self, interp):
+        if interp is not None and self.defining_class is not None:
+            interp.method_stack.append((self.defining_class, self.instance))
+            return True
+        return False
+
+    def _pop(self, interp, pushed):
+        if pushed:
+            interp.method_stack.pop()
 
     def __call__(self, *args, **kwargs):
-        return self.func.call(self.func.interp, [self.instance] + list(args), kwargs)
+        interp = self.func.interp
+        pushed = self._push(interp)
+        try:
+            return self.func.call(interp, [self.instance] + list(args), kwargs)
+        finally:
+            self._pop(interp, pushed)
 
     def call(self, interp, args, kwargs=None):
-        return self.func.call(interp, [self.instance] + list(args), kwargs)
+        pushed = self._push(interp)
+        try:
+            return self.func.call(interp, [self.instance] + list(args), kwargs)
+        finally:
+            self._pop(interp, pushed)
+
+
+class SuperProxy:
+    def __init__(self, start_class, instance):
+        self.start_class = start_class
+        self.instance = instance
+
+    def get(self, name):
+        inst = self.instance
+        klass = inst._class if isinstance(inst, MambaInstance) else inst
+        defining, attr = klass.lookup_from(name, self.start_class)
+        if attr is None:
+            raise AttributeError(f"'super' object has no attribute {name!r}")
+        if isinstance(attr, Function):
+            return BoundMethod(attr, inst, defining_class=defining)
+        if isinstance(attr, StaticMethod):
+            return attr.func
+        if isinstance(attr, ClassMethod):
+            inner = attr.func
+            target = inst if isinstance(inst, MambaClass) else inst._class
+            if isinstance(inner, Function):
+                return BoundMethod(inner, target, defining_class=defining)
+            return lambda *a, **kw: inner(target, *a, **kw)
+        return attr
+
+
+def _c3_merge(seqs):
+    result = []
+    seqs = [list(s) for s in seqs if s]
+    while seqs:
+        head = None
+        for s in seqs:
+            cand = s[0]
+            if not any(cand in rest[1:] for rest in seqs):
+                head = cand
+                break
+        if head is None:
+            raise TypeError("Cannot create a consistent MRO")
+        result.append(head)
+        seqs = [
+            (s[1:] if s and s[0] is head else s)
+            for s in seqs
+        ]
+        seqs = [s for s in seqs if s]
+    return result
+
+
+def _compute_mro(cls):
+    mro_bases = [
+        _compute_mro(b) for b in cls.bases if isinstance(b, MambaClass)
+    ]
+    return [cls] + _c3_merge(mro_bases + [list(cls.bases)])
 
 
 class MambaClass:
     def __init__(self, name, bases, attrs):
         self.name = name
-        self.bases = bases  # list[MambaClass]
+        self.bases = [b for b in bases if isinstance(b, MambaClass)]
         self.attrs = attrs  # dict
+        self.mro = _compute_mro(self)
 
     def lookup(self, name):
-        if name in self.attrs:
-            return self.attrs[name]
-        for b in self.bases:
-            if isinstance(b, MambaClass):
-                v = b.lookup(name)
-                if v is not None:
-                    return v
+        for c in self.mro:
+            if isinstance(c, MambaClass) and name in c.attrs:
+                return c.attrs[name]
         return None
 
+    def lookup_from(self, name, start_after):
+        """Lookup `name` in MRO, starting after `start_after` class."""
+        found = False
+        for c in self.mro:
+            if not found:
+                if c is start_after:
+                    found = True
+                continue
+            if isinstance(c, MambaClass) and name in c.attrs:
+                return c, c.attrs[name]
+        return None, None
+
     def is_subclass_of(self, other):
-        if self is other:
-            return True
-        for b in self.bases:
-            if isinstance(b, MambaClass) and b.is_subclass_of(other):
-                return True
-        return False
+        return other in self.mro
 
     def call(self, interp, args, kwargs=None):
         instance = MambaInstance(self)
-        init = self.lookup('__init__')
+        defining = None
+        for c in self.mro:
+            if isinstance(c, MambaClass) and '__init__' in c.attrs:
+                defining = c
+                init = c.attrs['__init__']
+                break
+        else:
+            init = None
         if isinstance(init, Function):
-            init.call(interp, [instance] + list(args), kwargs)
+            BoundMethod(init, instance, defining_class=defining).call(
+                interp, list(args), kwargs
+            )
         elif args or kwargs:
             raise TypeError(f"{self.name}() takes no arguments")
         return instance
@@ -235,19 +320,26 @@ class MambaInstance:
     def get(self, name):
         if name in self._fields:
             return self._fields[name]
-        attr = self._class.lookup(name)
+        defining = None
+        for c in self._class.mro:
+            if isinstance(c, MambaClass) and name in c.attrs:
+                defining = c
+                attr = c.attrs[name]
+                break
+        else:
+            attr = None
         if attr is None:
             raise AttributeError(
                 f"'{self._class.name}' object has no attribute {name!r}"
             )
         if isinstance(attr, Function):
-            return BoundMethod(attr, self)
+            return BoundMethod(attr, self, defining_class=defining)
         if isinstance(attr, StaticMethod):
             return attr.func
         if isinstance(attr, ClassMethod):
             inner = attr.func
             if isinstance(inner, Function):
-                return BoundMethod(inner, self._class)
+                return BoundMethod(inner, self._class, defining_class=defining)
             return lambda *a, **kw: inner(self._class, *a, **kw)
         if isinstance(attr, Property):
             fget = attr.fget
@@ -504,6 +596,19 @@ BUILTINS = {
 
 # ---------- interpreter ----------
 
+def _make_super(interp):
+    def _super(*args):
+        if len(args) == 0:
+            if not interp.method_stack:
+                raise RuntimeError("super(): no current method")
+            cls, inst = interp.method_stack[-1]
+            return SuperProxy(cls, inst)
+        if len(args) == 2:
+            return SuperProxy(args[0], args[1])
+        raise TypeError("super() takes 0 or 2 arguments")
+    return _super
+
+
 class Interpreter:
     def __init__(self, file=None):
         self.globals = Environment()
@@ -511,6 +616,8 @@ class Interpreter:
             self.globals.set(name, val)
         self.file = file
         self._module_cache = {}
+        self.method_stack = []  # list[(defining_class, instance)]
+        self.globals.set('super', _make_super(self))
 
     def run(self, module: ast.Module):
         self.exec_block(module.body, self.globals)
@@ -866,10 +973,19 @@ class Interpreter:
 
     def expr_Attribute(self, node, env):
         obj = self.eval_expr(node.obj, env)
+        if isinstance(obj, SuperProxy):
+            return obj.get(node.attr)
         if isinstance(obj, MambaInstance):
             return obj.get(node.attr)
         if isinstance(obj, MambaClass):
-            v = obj.lookup(node.attr)
+            defining = None
+            for c in obj.mro:
+                if isinstance(c, MambaClass) and node.attr in c.attrs:
+                    defining = c
+                    v = c.attrs[node.attr]
+                    break
+            else:
+                v = None
             if v is None:
                 raise AttributeError(
                     f"class {obj.name!r} has no attribute {node.attr!r}"
@@ -879,7 +995,7 @@ class Interpreter:
             if isinstance(v, ClassMethod):
                 inner = v.func
                 if isinstance(inner, Function):
-                    return BoundMethod(inner, obj)
+                    return BoundMethod(inner, obj, defining_class=defining)
                 return lambda *a, **kw: inner(obj, *a, **kw)
             return v
         if isinstance(obj, Module):
