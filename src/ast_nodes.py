@@ -247,6 +247,14 @@ class ClassDef(Node):
     def __repr__(self): return f"ClassDef({self.name}, {self.bases}, {self.body})"
 
 
+class With(Node):
+    def __init__(self, context, var, body):
+        self.context = context  # expr
+        self.var = var          # str or None
+        self.body = body
+    def __repr__(self): return f"With({self.context}, as={self.var}, {self.body})"
+
+
 class Try(Node):
     def __init__(self, body, handlers, finallybody):
         self.body = body

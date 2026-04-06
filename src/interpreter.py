@@ -405,6 +405,27 @@ class Interpreter:
             raise value
         raise TypeError("exceptions must derive from BaseException")
 
+    def stmt_With(self, node, env):
+        ctx = self.eval_expr(node.context, env)
+        # Resolve __enter__ / __exit__ supporting both Mamba and Python objects
+        enter = self._lookup_dunder(ctx, '__enter__')
+        exit_ = self._lookup_dunder(ctx, '__exit__')
+        value = enter() if not callable(enter) else enter()
+        if node.var is not None:
+            env.set(node.var, value)
+        try:
+            self.exec_block(node.body, env)
+        except BaseException as e:
+            if not exit_(type(e), e, None):
+                raise
+        else:
+            exit_(None, None, None)
+
+    def _lookup_dunder(self, obj, name):
+        if isinstance(obj, MambaInstance):
+            return obj.get(name)
+        return getattr(obj, name)
+
     def stmt_Try(self, node, env):
         try:
             try:

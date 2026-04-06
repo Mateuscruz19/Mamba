@@ -71,6 +71,7 @@ class Parser:
         if t == TokenType.DEF:   return self.func_def()
         if t == TokenType.CLASS: return self.class_def()
         if t == TokenType.TRY:   return self.try_stmt()
+        if t == TokenType.WITH:  return self.with_stmt()
         return self.simple_stmt()
 
     def simple_stmt(self):
@@ -276,6 +277,16 @@ class Parser:
         self.expect(TokenType.COLON)
         body = self.block()
         return ast.ClassDef(name, bases, body)
+
+    def with_stmt(self):
+        self.expect(TokenType.WITH)
+        ctx = self.expr()
+        var = None
+        if self.match(TokenType.AS):
+            var = self.expect(TokenType.NAME).value
+        self.expect(TokenType.COLON)
+        body = self.block()
+        return ast.With(ctx, var, body)
 
     def try_stmt(self):
         self.expect(TokenType.TRY)
