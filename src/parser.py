@@ -367,10 +367,14 @@ class Parser:
             TokenType.LT: '<', TokenType.GT: '>',
             TokenType.LTE: '<=', TokenType.GTE: '>=',
             TokenType.IS: 'is',
+            TokenType.IN: 'in',
         }
+        # `not in` — peek a NOT followed by IN
+        if self.check(TokenType.NOT) and self.peek(1).type == TokenType.IN:
+            self.advance(); self.advance()
+            return ast.Compare('not in', left, self.add())
         if self.cur.type in cmp_map:
             op = cmp_map[self.advance().type]
-            # support `is not`
             if op == 'is' and self.match(TokenType.NOT):
                 op = 'is not'
             right = self.add()

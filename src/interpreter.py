@@ -28,6 +28,8 @@ _CMP_OPS = {
     '<':  operator.lt, '>':  operator.gt,
     '<=': operator.le, '>=': operator.ge,
     'is': operator.is_, 'is not': operator.is_not,
+    'in':     lambda a, b: a in b,
+    'not in': lambda a, b: a not in b,
 }
 
 _CMP_DUNDERS = {
@@ -893,4 +895,6 @@ class Interpreter:
 
     @staticmethod
     def truthy(value):
+        # MambaInstance.__bool__ already delegates to Mamba __bool__/__len__,
+        # so plain bool() does the right thing.
         return bool(value)
