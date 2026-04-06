@@ -1,9 +1,43 @@
 """Tree-walking interpreter for the Mamba subset."""
 
+import operator
 import os
 
 from . import ast_nodes as ast
 from .errors import MambaRuntimeError
+
+
+_BIN_OPS = {
+    '+': operator.add, '-': operator.sub, '*': operator.mul,
+    '/': operator.truediv, '//': operator.floordiv, '%': operator.mod,
+    '**': operator.pow,
+}
+
+_BIN_DUNDERS = {
+    '+':  ('__add__',     '__radd__'),
+    '-':  ('__sub__',     '__rsub__'),
+    '*':  ('__mul__',     '__rmul__'),
+    '/':  ('__truediv__', '__rtruediv__'),
+    '//': ('__floordiv__', '__rfloordiv__'),
+    '%':  ('__mod__',     '__rmod__'),
+    '**': ('__pow__',     '__rpow__'),
+}
+
+_CMP_OPS = {
+    '==': operator.eq, '!=': operator.ne,
+    '<':  operator.lt, '>':  operator.gt,
+    '<=': operator.le, '>=': operator.ge,
+    'is': operator.is_, 'is not': operator.is_not,
+}
+
+_CMP_DUNDERS = {
+    '==': ('__eq__', '__eq__'),
+    '!=': ('__ne__', '__ne__'),
+    '<':  ('__lt__', '__gt__'),
+    '>':  ('__gt__', '__lt__'),
+    '<=': ('__le__', '__ge__'),
+    '>=': ('__ge__', '__le__'),
+}
 
 
 # ---------- environment ----------
@@ -273,6 +307,41 @@ class MambaInstance:
         if self._has('__repr__'):
             return str(self.get('__repr__')())
         return f"<{self._class.name} object>"
+
+    def __eq__(self, other):
+        if self._has('__eq__'):
+            return self.get('__eq__')(other)
+        return self is other
+
+    def __ne__(self, other):
+        if self._has('__ne__'):
+            return self.get('__ne__')(other)
+        return not self.__eq__(other)
+
+    def __lt__(self, other):
+        if self._has('__lt__'):
+            return self.get('__lt__')(other)
+        return NotImplemented
+
+    def __le__(self, other):
+        if self._has('__le__'):
+            return self.get('__le__')(other)
+        return NotImplemented
+
+    def __gt__(self, other):
+        if self._has('__gt__'):
+            return self.get('__gt__')(other)
+        return NotImplemented
+
+    def __ge__(self, other):
+        if self._has('__ge__'):
+            return self.get('__ge__')(other)
+        return NotImplemented
+
+    def __hash__(self):
+        if self._has('__hash__'):
+            return self.get('__hash__')()
+        return id(self)
 
 
 class _IterAdapter:
@@ -687,20 +756,25 @@ class Interpreter:
     def expr_BinOp(self, node, env):
         l = self.eval_expr(node.left, env)
         r = self.eval_expr(node.right, env)
-        if node.op == '+':  return l + r
-        if node.op == '-':  return l - r
-        if node.op == '*':  return l * r
-        if node.op == '/':  return l / r
-        if node.op == '//': return l // r
-        if node.op == '%':  return l % r
-        if node.op == '**': return l ** r
-        raise MambaRuntimeError(f"unknown binop {node.op!r}")
+        op = node.op
+        # Mamba instance dunders take precedence so user classes can
+        # override arithmetic. Try left operand first, then reflected on right.
+        dunder, rdunder = _BIN_DUNDERS[op]
+        if isinstance(l, MambaInstance) and l._has(dunder):
+            return l.get(dunder)(r)
+        if isinstance(r, MambaInstance) and r._has(rdunder):
+            return r.get(rdunder)(l)
+        return _BIN_OPS[op](l, r)
 
     def expr_UnaryOp(self, node, env):
         v = self.eval_expr(node.operand, env)
+        if node.op == 'not': return not self.truthy(v)
+        if isinstance(v, MambaInstance):
+            dunder = {'-': '__neg__', '+': '__pos__'}.get(node.op)
+            if dunder and v._has(dunder):
+                return v.get(dunder)()
         if node.op == '-': return -v
         if node.op == '+': return +v
-        if node.op == 'not': return not self.truthy(v)
         raise MambaRuntimeError(f"unknown unary op {node.op!r}")
 
     def expr_BoolOp(self, node, env):
@@ -714,17 +788,14 @@ class Interpreter:
     def expr_Compare(self, node, env):
         l = self.eval_expr(node.left, env)
         r = self.eval_expr(node.right, env)
-        ops = {
-            '==': lambda a, b: a == b,
-            '!=': lambda a, b: a != b,
-            '<':  lambda a, b: a < b,
-            '>':  lambda a, b: a > b,
-            '<=': lambda a, b: a <= b,
-            '>=': lambda a, b: a >= b,
-            'is': lambda a, b: a is b,
-            'is not': lambda a, b: a is not b,
-        }
-        return ops[node.op](l, r)
+        op = node.op
+        if op in _CMP_DUNDERS:
+            dunder, rdunder = _CMP_DUNDERS[op]
+            if isinstance(l, MambaInstance) and l._has(dunder):
+                return l.get(dunder)(r)
+            if isinstance(r, MambaInstance) and r._has(rdunder):
+                return r.get(rdunder)(l)
+        return _CMP_OPS[op](l, r)
 
     def expr_Call(self, node, env):
         func = self.eval_expr(node.func, env)
