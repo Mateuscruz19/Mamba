@@ -242,9 +242,31 @@ class MambaInstance:
             )
         if isinstance(attr, Function):
             return BoundMethod(attr, self)
+        if isinstance(attr, StaticMethod):
+            return attr.func
+        if isinstance(attr, ClassMethod):
+            inner = attr.func
+            if isinstance(inner, Function):
+                return BoundMethod(inner, self._class)
+            return lambda *a, **kw: inner(self._class, *a, **kw)
+        if isinstance(attr, Property):
+            fget = attr.fget
+            if isinstance(fget, Function):
+                return fget.call(fget.interp, [self], {})
+            return fget(self)
         return attr
 
     def set(self, name, value):
+        attr = self._class.lookup(name)
+        if isinstance(attr, Property):
+            if attr.fset is None:
+                raise AttributeError(f"can't set attribute {name!r}")
+            fset = attr.fset
+            if isinstance(fset, Function):
+                fset.call(fset.interp, [self, value], {})
+            else:
+                fset(self, value)
+            return
         self._fields[name] = value
 
     def _has(self, name):
@@ -407,6 +429,23 @@ def _builtin_print(*args, **kwargs):
     print(*args, **kwargs)
 
 
+class StaticMethod:
+    def __init__(self, func): self.func = func
+
+
+class ClassMethod:
+    def __init__(self, func): self.func = func
+
+
+class Property:
+    def __init__(self, fget, fset=None):
+        self.fget = fget
+        self.fset = fset
+
+    def setter(self, fn):
+        return Property(self.fget, fn)
+
+
 BUILTINS = {
     'print': _builtin_print,
     'len': len,
@@ -457,6 +496,9 @@ BUILTINS = {
     'ArithmeticError': ArithmeticError,
     'LookupError': LookupError,
     'AssertionError': AssertionError,
+    'staticmethod': StaticMethod,
+    'classmethod': ClassMethod,
+    'property': Property,
 }
 
 
@@ -832,6 +874,13 @@ class Interpreter:
                 raise AttributeError(
                     f"class {obj.name!r} has no attribute {node.attr!r}"
                 )
+            if isinstance(v, StaticMethod):
+                return v.func
+            if isinstance(v, ClassMethod):
+                inner = v.func
+                if isinstance(inner, Function):
+                    return BoundMethod(inner, obj)
+                return lambda *a, **kw: inner(obj, *a, **kw)
             return v
         if isinstance(obj, Module):
             return obj.get(node.attr)
