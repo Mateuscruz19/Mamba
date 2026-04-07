@@ -674,6 +674,73 @@ BUILTINS = {
 
 # ---------- interpreter ----------
 
+class OverloadGroup:
+    """A set of function branches sharing the same name. At call time
+    the first branch whose arity (and, if specified, runtime types) match
+    is invoked. Branches are tried in registration order."""
+
+    def __init__(self, name, interp):
+        self.name = name
+        self.interp = interp
+        self.branches = []  # list[(types_or_None, fn)]
+
+    def add(self, types, fn):
+        self.branches.append((types, fn))
+
+    def __call__(self, *args, **kwargs):
+        return self.interp.call_value(self, list(args), dict(kwargs))
+
+    def call(self, interp, args, kwargs=None):
+        kwargs = dict(kwargs or {})
+        # Type-annotated branches first, then untyped (arity-only).
+        ordered = sorted(
+            self.branches, key=lambda b: 0 if b[0] is not None else 1
+        )
+        for types, fn in ordered:
+            if not _branch_arity_ok(fn, len(args)):
+                continue
+            if types is not None:
+                if len(types) != len(args):
+                    continue
+                if not all(_isinst(a, t) for a, t in zip(args, types)):
+                    continue
+            return interp.call_value(fn, args, kwargs)
+        sigs = ', '.join(_branch_sig(t, fn) for t, fn in self.branches)
+        raise TypeError(
+            f"no overload of {self.name!r} matches "
+            f"({', '.join(type(a).__name__ for a in args)}). "
+            f"available: [{sigs}]"
+        )
+
+
+def _branch_arity_ok(fn, n):
+    if isinstance(fn, Function):
+        decl = fn.decl
+        nparams = len(decl.params)
+        ndefaults = sum(1 for d in decl.defaults if d is not None)
+        if decl.vararg is not None:
+            return n >= nparams - ndefaults
+        return (nparams - ndefaults) <= n <= nparams
+    return True
+
+
+def _branch_sig(types, fn):
+    if isinstance(fn, Function):
+        nparams = len(fn.decl.params)
+    else:
+        nparams = '?'
+    if types is None:
+        return f"arity={nparams}"
+    return "(" + ", ".join(getattr(t, '__name__', repr(t)) for t in types) + ")"
+
+
+def _isinst(value, type_):
+    if isinstance(type_, MambaClass):
+        return (isinstance(value, MambaInstance)
+                and value._class.is_subclass_of(type_))
+    return isinstance(value, type_)
+
+
 def _make_mamba_decorators(interp):
     """Mamba's batteries-included decorators: @memo, @retry, @trace.
     Each is callable directly (`@memo`) or with config (`@retry(times=3)`)."""
@@ -733,7 +800,43 @@ def _make_mamba_decorators(interp):
         wrapper.__name__ = name
         return wrapper
 
-    return {'memo': memo, 'trace': trace, 'retry': retry}
+    def overload(*args, **kwargs):
+        """Real runtime overloading. Two forms:
+
+            @overload                  # arity-only dispatch
+            def f(x): ...
+            @overload
+            def f(x, y): ...
+
+            @overload(int)             # type + arity dispatch
+            def g(x): return 'int'
+            @overload(str)
+            def g(x): return 'str'
+
+        Multiple defs of the same name accumulate into one OverloadGroup
+        keyed by name in the interpreter's overload registry."""
+        # bare form: @overload  →  args == (fn,)
+        if len(args) == 1 and not kwargs and isinstance(args[0], Function):
+            return _register_overload(None, args[0])
+        # configured form: @overload(int, str)
+        types = args
+        def deco(fn):
+            return _register_overload(types, fn)
+        return deco
+
+    def _register_overload(types, fn):
+        name = fn.decl.name if isinstance(fn, Function) else getattr(fn, '__name__', None)
+        if name is None:
+            raise TypeError("@overload needs a named function")
+        groups = interp._overload_groups
+        group = groups.get(name)
+        if group is None:
+            group = OverloadGroup(name, interp)
+            groups[name] = group
+        group.add(types, fn)
+        return group
+
+    return {'memo': memo, 'trace': trace, 'retry': retry, 'overload': overload}
 
 
 def _make_super(interp):
@@ -757,6 +860,7 @@ class Interpreter:
         self.file = file
         self._module_cache = {}
         self.method_stack = []  # list[(defining_class, instance)]
+        self._overload_groups = {}  # name -> OverloadGroup
         self.globals.set('super', _make_super(self))
         for name, val in _make_mamba_decorators(self).items():
             self.globals.set(name, val)
@@ -856,7 +960,7 @@ class Interpreter:
         env.set(node.name, value)
 
     def call_value(self, fn, args, kwargs):
-        if isinstance(fn, (Function, BoundMethod)):
+        if isinstance(fn, (Function, BoundMethod, OverloadGroup)):
             return fn.call(self, args, kwargs)
         if isinstance(fn, MambaClass):
             return fn.call(self, args, kwargs)
@@ -1152,7 +1256,7 @@ class Interpreter:
                 kwargs.update(self.eval_expr(v, env))
             else:
                 kwargs[name] = self.eval_expr(v, env)
-        if isinstance(func, (Function, BoundMethod, MambaClass)):
+        if isinstance(func, (Function, BoundMethod, MambaClass, OverloadGroup)):
             return func.call(self, args, kwargs)
         if callable(func):
             return func(*args, **kwargs)
