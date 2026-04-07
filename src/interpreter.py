@@ -58,12 +58,29 @@ class Environment:
         if name in self.global_names:
             if name in self.globals.vars:
                 return self.globals.vars[name]
-            raise NameError(f"name {name!r} is not defined")
+            raise NameError(self._not_defined_msg(name))
         if name in self.vars:
             return self.vars[name]
         if self.parent is not None:
             return self.parent.get(name)
-        raise NameError(f"name {name!r} is not defined")
+        raise NameError(self._not_defined_msg(name))
+
+    def all_visible_names(self):
+        names = set(self.vars.keys())
+        if self.parent is not None:
+            names.update(self.parent.all_visible_names())
+        else:
+            names.update(self.globals.vars.keys())
+        return names
+
+    def _not_defined_msg(self, name):
+        from .errors import suggest
+        candidates = self.all_visible_names()
+        s = suggest(name, candidates)
+        msg = f"name {name!r} is not defined"
+        if s:
+            msg += f". did you mean {s!r}?"
+        return msg
 
     def set(self, name, value):
         if name in self.global_names:

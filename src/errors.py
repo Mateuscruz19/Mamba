@@ -4,6 +4,45 @@ import os
 import sys
 
 
+def _levenshtein(a, b):
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            curr[j] = min(
+                curr[j - 1] + 1,
+                prev[j] + 1,
+                prev[j - 1] + (ca != cb),
+            )
+        prev = curr
+    return prev[-1]
+
+
+def suggest(name, candidates, max_distance=None):
+    """Return the closest candidate to `name`, or None if nothing's close."""
+    if not name:
+        return None
+    if max_distance is None:
+        # Allow ~1/3 of the name length, minimum 1
+        max_distance = max(1, len(name) // 3)
+    best = None
+    best_d = max_distance + 1
+    for c in candidates:
+        if not c or c == name:
+            continue
+        d = _levenshtein(name, c)
+        if d < best_d:
+            best_d = d
+            best = c
+    return best
+
+
 def _supports_color():
     if os.environ.get("NO_COLOR"):
         return False
