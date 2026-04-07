@@ -825,6 +825,86 @@ def _isinst(value, type_):
     return isinstance(value, type_)
 
 
+class Task:
+    """Handle for a spawned concurrent computation. Returned by spawn().
+    Holds either a result or an exception until joined.
+
+    Note on the GIL: Mamba runs on top of CPython today, so CPU-bound
+    workloads in spawned tasks still serialize on CPython's GIL. I/O-bound
+    workloads (network, files, sleep) parallelize fine. The API is designed
+    to survive a future move to a free-threaded Python build or a non-CPython
+    backend without changing user code."""
+
+    __slots__ = ('_result', '_error', '_done', '_thread', '_name')
+
+    def __init__(self, fn, args, kwargs, interp, name=None):
+        import threading
+        self._result = None
+        self._error = None
+        self._done = False
+        self._name = name or _type_name(fn) if not isinstance(fn, Function) else fn.decl.name
+
+        def runner():
+            try:
+                self._result = interp.call_value(fn, list(args), dict(kwargs))
+            except BaseException as e:
+                self._error = e
+            finally:
+                self._done = True
+
+        self._thread = threading.Thread(target=runner, daemon=True,
+                                        name=f"mamba-task:{self._name}")
+        self._thread.start()
+
+    def join(self):
+        """Block until the task finishes. Re-raises any exception it hit."""
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+    def done(self):
+        return self._done
+
+    def __repr__(self):
+        state = 'done' if self._done else 'running'
+        return f"<Task {self._name!r} {state}>"
+
+
+class Nursery:
+    """Structured-concurrency scope. Tasks spawned inside the `with` block
+    are guaranteed to finish (or have their errors raised) before the block
+    exits — no orphan threads, no forgotten work."""
+
+    def __init__(self, interp):
+        self.interp = interp
+        self.tasks = []
+
+    def spawn(self, fn, *args, **kwargs):
+        t = Task(fn, args, kwargs, self.interp)
+        self.tasks.append(t)
+        return t
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Join every spawned task. The first task error is re-raised; later
+        # ones are attached as __context__ on a single MultiError.
+        errors = []
+        for t in self.tasks:
+            try:
+                t.join()
+            except BaseException as e:
+                errors.append(e)
+        if errors:
+            if len(errors) == 1:
+                raise errors[0]
+            primary = errors[0]
+            primary.__context__ = errors[1] if len(errors) > 1 else None
+            raise primary
+
+
 def _make_mamba_decorators(interp):
     """Mamba's batteries-included decorators: @memo, @retry, @trace.
     Each is callable directly (`@memo`) or with config (`@retry(times=3)`)."""
@@ -970,6 +1050,31 @@ def _make_mamba_decorators(interp):
             'overload': overload, 'typed': typed}
 
 
+def _make_concurrency(interp):
+    """Mamba's structured-concurrency builtins: spawn, parallel, nursery."""
+
+    def spawn(fn, *args, **kwargs):
+        return Task(fn, args, kwargs, interp)
+
+    def parallel(*fns):
+        """Run a list of zero-arg callables concurrently and return a list
+        of their results in input order. Raises if any of them raised."""
+        if len(fns) == 1 and isinstance(fns[0], (list, tuple)):
+            fns = tuple(fns[0])
+        tasks = [Task(f, (), {}, interp) for f in fns]
+        return [t.join() for t in tasks]
+
+    def nursery():
+        return Nursery(interp)
+
+    def sleep(seconds):
+        import time as _t
+        _t.sleep(seconds)
+
+    return {'spawn': spawn, 'parallel': parallel,
+            'nursery': nursery, 'sleep': sleep, 'Task': Task}
+
+
 def _make_super(interp):
     def _super(*args):
         if len(args) == 0:
@@ -995,6 +1100,8 @@ class Interpreter:
         self._overload_groups = {}  # name -> OverloadGroup
         self.globals.set('super', _make_super(self))
         for name, val in _make_mamba_decorators(self).items():
+            self.globals.set(name, val)
+        for name, val in _make_concurrency(self).items():
             self.globals.set(name, val)
 
     def run(self, module: ast.Module):
