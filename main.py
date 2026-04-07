@@ -5,6 +5,7 @@ from src.lexer import Lexer
 from src.parser import Parser
 from src.interpreter import Interpreter
 from src.errors import MambaError
+from src import ast_nodes as ast
 
 
 def run_file(path: str) -> None:
@@ -25,12 +26,21 @@ def repl() -> None:
     try:
         while True:
             line = input(">>> ")
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped:
                 continue
             try:
-                tokens = Lexer(line + "\n").tokenize()
-                tree = Parser(tokens, source=line).parse()
-                interp.run(tree)
+                tokens = Lexer(stripped + "\n").tokenize()
+                tree = Parser(tokens, source=stripped).parse()
+                # If the line is a single bare expression, print its value
+                # the way a normal REPL does.
+                if (len(tree.body) == 1
+                        and isinstance(tree.body[0], ast.ExprStmt)):
+                    value = interp.eval_expr(tree.body[0].expr, interp.globals)
+                    if value is not None:
+                        print(repr(value))
+                else:
+                    interp.run(tree)
             except MambaError as e:
                 print(e.format())
             except Exception as e:
