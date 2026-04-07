@@ -34,18 +34,47 @@ class Parser:
             return self.advance()
         return None
 
-    def error(self, msg):
+    def error(self, msg, hint=None):
         return MambaSyntaxError(
-            msg, line=self.cur.line, file=self.file, source=self.source
+            msg, line=self.cur.line, file=self.file, source=self.source,
+            hint=hint,
         )
 
     def expect(self, type_, msg=None):
         if self.cur.type != type_:
+            got = self.cur
+            hint = self._hint_for_expect(type_, got)
             raise self.error(
-                msg or f"expected {type_.name} but got {self.cur.type.name} "
-                       f"({self.cur.value!r})"
+                msg or f"expected {type_.name} but got {got.type.name} "
+                       f"({got.value!r})",
+                hint=hint,
             )
         return self.advance()
+
+    def _hint_for_expect(self, expected, got):
+        # COLON missing after if/while/for/def/class/try/except/else/elif
+        if expected == TokenType.COLON:
+            return ("statements like `if`, `for`, `while`, `def`, `class` "
+                    "must end with a `:` before the indented block.")
+        if expected == TokenType.NEWLINE:
+            if got.type == TokenType.ASSIGN:
+                return ("`=` is assignment, not comparison. "
+                        "Use `==` to compare values.")
+            return ("each statement must end at a newline. "
+                    "did you forget an operator or close a bracket?")
+        if expected == TokenType.RPAREN:
+            return "unbalanced parentheses — looks like a `)` is missing."
+        if expected == TokenType.RBRACK:
+            return "unbalanced brackets — looks like a `]` is missing."
+        if expected == TokenType.RBRACE:
+            return "unbalanced braces — looks like a `}` is missing."
+        if expected == TokenType.INDENT:
+            return ("expected an indented block. "
+                    "indent the body of the previous line with 4 spaces.")
+        if expected == TokenType.NAME:
+            return ("expected an identifier here "
+                    "(a variable, function, or attribute name).")
+        return None
 
     def skip_newlines(self):
         while self.match(TokenType.NEWLINE):
