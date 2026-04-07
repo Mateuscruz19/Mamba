@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-a3d977?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/tests-183%20passing-a3d977" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-225%20passing-a3d977" alt="Tests">
   <img src="https://img.shields.io/badge/status-experimental-1b1f23" alt="Status">
   <img src="https://img.shields.io/badge/license-MIT-1b1f23" alt="License">
   <img src="https://img.shields.io/badge/built%20with-tree--walking-a3d977" alt="Tree-walking interpreter">
@@ -210,6 +210,80 @@ The runtime also suggests close matches for typos:
 NameError: name 'lenght' is not defined. did you mean 'length'?
 ```
 
+### Load-bearing type annotations
+
+Annotations are parsed and stored on every function, but **not enforced by
+default** — your existing Python code keeps working. Opt in per-function
+with `@typed`, or globally with `--strict`:
+
+```python
+@typed
+def add(x: int, y: int) -> int:
+    return x + y
+
+@typed
+def lookup(d: dict[str, int]) -> int | None:
+    return d.get("k")
+
+@typed
+def feed(a: Animal) -> str:    # respects user-class MRO
+    return "fed"
+```
+
+Supports unions (`int | str`), parameterized generics (`list[int]`,
+`dict[str, int]`, `tuple[int, ...]`), `T | None` for optional, and full
+user-class hierarchies. Run `python3 main.py --strict file.py` to enforce
+every annotation in a program without touching the source.
+
+### Structured concurrency
+
+`spawn`, `parallel`, and `nursery` are built in — no `import threading`,
+no `asyncio` ceremony, no event loop:
+
+```python
+# fire-and-join
+t = spawn(fetch_user, 42)
+user = t.join()
+
+# fan out N independent calls
+results = parallel(
+    lambda: fetch("/a"),
+    lambda: fetch("/b"),
+    lambda: fetch("/c"),
+)
+
+# nursery: every spawned task is guaranteed to finish
+# before the `with` block exits — no orphans, ever.
+with nursery() as n:
+    n.spawn(load_users)
+    n.spawn(load_orders)
+    n.spawn(load_inventory)
+```
+
+> **Note on the GIL.** Today Mamba runs on top of CPython, so CPU-bound tasks
+> still serialize on CPython's GIL. I/O-bound work (HTTP, files, `sleep`)
+> parallelizes for real. The API is designed to survive a future move to a
+> free-threaded Python build or a non-CPython backend without changing user
+> code.
+
+### Built-in package manager
+
+The boring dance of `python -m venv`, `source venv/bin/activate`,
+`pip install`, `pip freeze` is gone. Mamba ships an `npm`-style workflow:
+project-local installs in `mamba_modules/`, a single manifest file:
+
+```bash
+python3 main.py init                    # creates mamba.json
+python3 main.py add requests            # installs into ./mamba_modules
+python3 main.py add httpx
+python3 main.py install                 # reinstalls everything from manifest
+python3 main.py remove requests
+```
+
+When you run a Mamba file, the interpreter automatically prepends
+`./mamba_modules` to `sys.path`, so `import requests` just works — no
+virtualenv to remember to activate.
+
 ### The mutable-default fix
 
 Python's most famous footgun:
@@ -240,7 +314,7 @@ src/
   interpreter.py   # tree-walking evaluator + builtins
   errors.py        # Elm/Rust-style error formatter
 main.py            # CLI entry point + REPL
-tests/             # 183 unittest cases across phases A–G
+tests/             # 225 unittest cases across phases A–J
 examples/          # runnable .py demos
 assets/            # logo and visual identity
 ```
@@ -264,9 +338,9 @@ Mamba evolves in **phases**. Each phase ships behind a green test suite.
 | E     | Block comments, multi-line lambdas, mutable-default fix     | done    |
 | F     | `\|>`, `??`, `?.`/`?[`, `match`, `@memo`/`@trace`/`@retry`  | done    |
 | G     | Real runtime function overloading                           | done    |
-| H     | Load-bearing typing (hints feed runtime/perf)               | planned |
-| I     | GIL-free parallel execution                                 | planned |
-| J     | Built-in package manager                                    | planned |
+| H     | Type annotations + `@typed`, unions, generics, `--strict`   | done    |
+| I     | Structured concurrency (`spawn`, `parallel`, `nursery`)     | done    |
+| J     | Built-in package manager (`mamba add`, `install`)           | done    |
 
 Longer-term ideas: parse-time macros, structured concurrency in the core,
 native hot reload, a real REPL with multiline editing and visual inspection.

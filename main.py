@@ -6,9 +6,11 @@ from src.parser import Parser
 from src.interpreter import Interpreter
 from src.errors import MambaError
 from src import ast_nodes as ast
+from src import pkg as pkg_cmd
 
 
 def run_file(path: str, strict: bool = False) -> None:
+    pkg_cmd.inject_modules_path(path)
     with open(path, 'r', encoding='utf-8') as f:
         source = f.read()
     try:
@@ -50,12 +52,32 @@ def repl() -> None:
         print()
 
 
+PKG_COMMANDS = {'init', 'add', 'remove', 'install'}
+
+
 def main() -> None:
     args = sys.argv[1:]
     strict = False
     if '--strict' in args:
         strict = True
         args.remove('--strict')
+    if args and args[0] in PKG_COMMANDS:
+        cmd = args[0]
+        rest = args[1:]
+        if cmd == 'init':
+            sys.exit(pkg_cmd.cmd_init())
+        if cmd == 'install':
+            sys.exit(pkg_cmd.cmd_install())
+        if cmd == 'add':
+            if not rest:
+                print("usage: mamba add <package>")
+                sys.exit(2)
+            sys.exit(pkg_cmd.cmd_add(rest[0]))
+        if cmd == 'remove':
+            if not rest:
+                print("usage: mamba remove <package>")
+                sys.exit(2)
+            sys.exit(pkg_cmd.cmd_remove(rest[0]))
     if args:
         run_file(args[0], strict=strict)
     else:
