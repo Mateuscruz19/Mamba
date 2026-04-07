@@ -77,6 +77,8 @@ class TokenType(Enum):
     DEL = auto()
     PIPE = auto()  # |>  (Mamba pipe operator)
     NCOALESCE = auto()  # ??  (Mamba none-coalescing)
+    QDOT = auto()       # ?.  (Mamba optional chaining attribute)
+    QLBRACK = auto()    # ?[  (Mamba optional chaining subscript)
     # special
     EOF = auto()
 
@@ -431,6 +433,15 @@ class Lexer:
                 continue
             if ch == '?' and self.peek() == '?':
                 tokens.append(Token(TokenType.NCOALESCE, '??', self.line))
+                self.advance(); self.advance()
+                continue
+            if ch == '?' and self.peek() == '.':
+                tokens.append(Token(TokenType.QDOT, '?.', self.line))
+                self.advance(); self.advance()
+                continue
+            if ch == '?' and self.peek() == '[':
+                tokens.append(Token(TokenType.QLBRACK, '?[', self.line))
+                self.paren_depth += 1
                 self.advance(); self.advance()
                 continue
             two_char_aug = {

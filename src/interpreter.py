@@ -1074,6 +1074,8 @@ class Interpreter:
 
     def expr_Call(self, node, env):
         func = self.eval_expr(node.func, env)
+        if getattr(node, 'optional', False) and func is None:
+            return None
         args = []
         for a in node.args:
             if isinstance(a, ast.Starred):
@@ -1094,16 +1096,26 @@ class Interpreter:
 
     def expr_Attribute(self, node, env):
         obj = self.eval_expr(node.obj, env)
+        if getattr(node, 'optional', False):
+            if obj is None:
+                return None
+            try:
+                return self._do_attr(obj, node.attr)
+            except AttributeError:
+                return None
+        return self._do_attr(obj, node.attr)
+
+    def _do_attr(self, obj, attr):
         if isinstance(obj, SuperProxy):
-            return obj.get(node.attr)
+            return obj.get(attr)
         if isinstance(obj, MambaInstance):
-            return obj.get(node.attr)
+            return obj.get(attr)
         if isinstance(obj, MambaClass):
             defining = None
             for c in obj.mro:
-                if isinstance(c, MambaClass) and node.attr in c.attrs:
+                if isinstance(c, MambaClass) and attr in c.attrs:
                     defining = c
-                    v = c.attrs[node.attr]
+                    v = c.attrs[attr]
                     break
             else:
                 v = None
@@ -1113,8 +1125,8 @@ class Interpreter:
                 for c in obj.mro:
                     if isinstance(c, MambaClass):
                         cands.update(c.attrs.keys())
-                s = suggest(node.attr, cands)
-                msg = f"class {obj.name!r} has no attribute {node.attr!r}"
+                s = suggest(attr, cands)
+                msg = f"class {obj.name!r} has no attribute {attr!r}"
                 if s:
                     msg += f". did you mean {s!r}?"
                 raise AttributeError(msg)
@@ -1127,21 +1139,29 @@ class Interpreter:
                 return lambda *a, **kw: inner(obj, *a, **kw)
             return v
         if isinstance(obj, Module):
-            return obj.get(node.attr)
+            return obj.get(attr)
         try:
-            return getattr(obj, node.attr)
+            return getattr(obj, attr)
         except AttributeError:
             from .errors import suggest
             cands = [n for n in dir(obj) if not n.startswith('_')]
-            s = suggest(node.attr, cands)
+            s = suggest(attr, cands)
             msg = (f"{type(obj).__name__!r} object has no attribute "
-                   f"{node.attr!r}")
+                   f"{attr!r}")
             if s:
                 msg += f". did you mean {s!r}?"
             raise AttributeError(msg)
 
     def expr_Subscript(self, node, env):
         obj = self.eval_expr(node.obj, env)
+        if getattr(node, 'optional', False):
+            if obj is None:
+                return None
+            idx = self._eval_index(node.index, env)
+            try:
+                return obj[idx]
+            except (KeyError, IndexError):
+                return None
         idx = self._eval_index(node.index, env)
         return obj[idx]
 

@@ -79,10 +79,11 @@ class DoubleStarred(Node):
 
 
 class Call(Node):
-    def __init__(self, func, args, kwargs=None):
+    def __init__(self, func, args, kwargs=None, optional=False):
         self.func = func
         self.args = args         # list[expr | Starred]
         self.kwargs = kwargs or []  # list[(name|None, expr)] — name=None means **expr
+        self.optional = optional  # True if part of an optional chain
     def __repr__(self): return f"Call({self.func}, {self.args}, {self.kwargs})"
 
 
@@ -131,16 +132,18 @@ class Slice(Node):
 
 
 class Attribute(Node):
-    def __init__(self, obj, attr):
+    def __init__(self, obj, attr, optional=False):
         self.obj = obj
         self.attr = attr
+        self.optional = optional  # True if part of an optional chain (?. seen)
     def __repr__(self): return f"Attribute({self.obj}, {self.attr!r})"
 
 
 class Subscript(Node):
-    def __init__(self, obj, index):
+    def __init__(self, obj, index, optional=False):
         self.obj = obj
         self.index = index
+        self.optional = optional
     def __repr__(self): return f"Subscript({self.obj}, {self.index})"
 
 

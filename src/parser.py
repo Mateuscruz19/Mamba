@@ -558,6 +558,10 @@ class Parser:
 
     def trailer(self):
         node = self.atom()
+        # Once a ?. or ?[ is seen anywhere in the trailer chain, every
+        # subsequent link auto-inherits optional=True so the whole chain
+        # short-circuits to None — TS-style.
+        in_optional_chain = False
         while True:
             if self.match(TokenType.LPAREN):
                 args, kwargs = [], []
@@ -568,13 +572,23 @@ class Parser:
                             break
                         self._parse_call_arg(args, kwargs)
                 self.expect(TokenType.RPAREN)
-                node = ast.Call(node, args, kwargs)
+                node = ast.Call(node, args, kwargs, optional=in_optional_chain)
             elif self.match(TokenType.LBRACK):
-                node = ast.Subscript(node, self._parse_subscript())
+                node = ast.Subscript(node, self._parse_subscript(),
+                                     optional=in_optional_chain)
+                self.expect(TokenType.RBRACK)
+            elif self.match(TokenType.QLBRACK):
+                in_optional_chain = True
+                node = ast.Subscript(node, self._parse_subscript(),
+                                     optional=True)
                 self.expect(TokenType.RBRACK)
             elif self.match(TokenType.DOT):
                 attr = self.expect(TokenType.NAME).value
-                node = ast.Attribute(node, attr)
+                node = ast.Attribute(node, attr, optional=in_optional_chain)
+            elif self.match(TokenType.QDOT):
+                in_optional_chain = True
+                attr = self.expect(TokenType.NAME).value
+                node = ast.Attribute(node, attr, optional=True)
             else:
                 break
         return node

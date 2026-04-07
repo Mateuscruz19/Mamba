@@ -83,5 +83,48 @@ class NoneCoalesceTests(unittest.TestCase):
         self.assertEqual(run_mamba("print('' ?? 'x')\n"), "\n")
 
 
+class OptionalChainingTests(unittest.TestCase):
+    def test_attr_on_none_returns_none(self):
+        self.assertEqual(run_mamba("x = None\nprint(x?.foo)\n"), "None\n")
+
+    def test_attr_on_object_works(self):
+        src = (
+            "class A:\n"
+            "    def __init__(self):\n"
+            "        self.x = 7\n"
+            "a = A()\n"
+            "print(a?.x)\n"
+        )
+        self.assertEqual(run_mamba(src), "7\n")
+
+    def test_method_call_on_none(self):
+        self.assertEqual(run_mamba("x = None\nprint(x?.foo())\n"), "None\n")
+
+    def test_subscript_on_none(self):
+        self.assertEqual(run_mamba("x = None\nprint(x?['k'])\n"), "None\n")
+
+    def test_subscript_missing_key_returns_none(self):
+        src = "d = {'a': 1}\nprint(d?['missing'])\n"
+        self.assertEqual(run_mamba(src), "None\n")
+
+    def test_chain_short_circuits_after_first_none(self):
+        # once any link in the chain is None, the rest auto-shortcircuits
+        src = "x = None\nprint(x?.a.b.c)\n"
+        self.assertEqual(run_mamba(src), "None\n")
+
+    def test_chain_with_missing_attr(self):
+        src = (
+            "class A:\n"
+            "    pass\n"
+            "a = A()\n"
+            "print(a?.missing?.deeper)\n"
+        )
+        self.assertEqual(run_mamba(src), "None\n")
+
+    def test_combined_with_coalesce(self):
+        src = "x = None\nprint(x?.foo ?? 'default')\n"
+        self.assertEqual(run_mamba(src), "default\n")
+
+
 if __name__ == "__main__":
     unittest.main()
