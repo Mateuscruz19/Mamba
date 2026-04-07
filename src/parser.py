@@ -501,6 +501,14 @@ class Parser:
         return node
 
     def _parse_call_arg(self, args, kwargs):
+        # **expr → kwargs unpacking
+        if self.match(TokenType.POWER):
+            kwargs.append((None, self.expr()))
+            return
+        # *expr → args unpacking
+        if self.match(TokenType.MULTIPLY):
+            args.append(ast.Starred(self.expr()))
+            return
         # NAME = expr  → keyword arg
         if (self.check(TokenType.NAME)
                 and self.peek(1).type == TokenType.ASSIGN):
@@ -593,8 +601,8 @@ class Parser:
             self.advance()
             if self.match(TokenType.RBRACK):
                 return ast.ListLit([])
-            first = self.expr()
-            if self.check(TokenType.FOR):
+            first = self._parse_starred_or_expr()
+            if self.check(TokenType.FOR) and not isinstance(first, ast.Starred):
                 gens = self._parse_comp_clauses(TokenType.RBRACK)
                 self.expect(TokenType.RBRACK)
                 return ast.ListComp(first, gens)
@@ -602,14 +610,29 @@ class Parser:
             while self.match(TokenType.COMMA):
                 if self.check(TokenType.RBRACK):
                     break
-                elts.append(self.expr())
+                elts.append(self._parse_starred_or_expr())
             self.expect(TokenType.RBRACK)
             return ast.ListLit(elts)
         if tok.type == TokenType.LBRACE:
             self.advance()
             if self.match(TokenType.RBRACE):
                 return ast.DictLit([])
-            first = self.expr()
+            # **expr at start → dict
+            if self.match(TokenType.POWER):
+                pairs = [(None, self.expr())]
+                while self.match(TokenType.COMMA):
+                    if self.check(TokenType.RBRACE):
+                        break
+                    if self.match(TokenType.POWER):
+                        pairs.append((None, self.expr()))
+                    else:
+                        k = self.expr()
+                        self.expect(TokenType.COLON)
+                        v = self.expr()
+                        pairs.append((k, v))
+                self.expect(TokenType.RBRACE)
+                return ast.DictLit(pairs)
+            first = self._parse_starred_or_expr()
             if self.match(TokenType.COLON):
                 first_v = self.expr()
                 if self.check(TokenType.FOR):
@@ -620,14 +643,17 @@ class Parser:
                 while self.match(TokenType.COMMA):
                     if self.check(TokenType.RBRACE):
                         break
-                    k = self.expr()
-                    self.expect(TokenType.COLON)
-                    v = self.expr()
-                    pairs.append((k, v))
+                    if self.match(TokenType.POWER):
+                        pairs.append((None, self.expr()))
+                    else:
+                        k = self.expr()
+                        self.expect(TokenType.COLON)
+                        v = self.expr()
+                        pairs.append((k, v))
                 self.expect(TokenType.RBRACE)
                 return ast.DictLit(pairs)
             # set literal or set comprehension
-            if self.check(TokenType.FOR):
+            if self.check(TokenType.FOR) and not isinstance(first, ast.Starred):
                 gens = self._parse_comp_clauses(TokenType.RBRACE)
                 self.expect(TokenType.RBRACE)
                 return ast.SetComp(first, gens)
@@ -635,9 +661,14 @@ class Parser:
             while self.match(TokenType.COMMA):
                 if self.check(TokenType.RBRACE):
                     break
-                elts.append(self.expr())
+                elts.append(self._parse_starred_or_expr())
             self.expect(TokenType.RBRACE)
             return ast.SetLit(elts)
+
+    def _parse_starred_or_expr(self):
+        if self.match(TokenType.MULTIPLY):
+            return ast.Starred(self.expr())
+        return self.expr()
         raise self.error(
             f"unexpected token {tok.type.name} ({tok.value!r})"
         )

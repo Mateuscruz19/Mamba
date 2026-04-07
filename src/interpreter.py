@@ -1050,8 +1050,18 @@ class Interpreter:
 
     def expr_Call(self, node, env):
         func = self.eval_expr(node.func, env)
-        args = [self.eval_expr(a, env) for a in node.args]
-        kwargs = {name: self.eval_expr(v, env) for name, v in node.kwargs}
+        args = []
+        for a in node.args:
+            if isinstance(a, ast.Starred):
+                args.extend(self.eval_expr(a.value, env))
+            else:
+                args.append(self.eval_expr(a, env))
+        kwargs = {}
+        for name, v in node.kwargs:
+            if name is None:
+                kwargs.update(self.eval_expr(v, env))
+            else:
+                kwargs[name] = self.eval_expr(v, env)
         if isinstance(func, (Function, BoundMethod, MambaClass)):
             return func.call(self, args, kwargs)
         if callable(func):
@@ -1120,17 +1130,32 @@ class Interpreter:
                 out.append(str(self.eval_expr(payload, env)))
         return ''.join(out)
 
+    def _expand_elts(self, elts, env):
+        out = []
+        for e in elts:
+            if isinstance(e, ast.Starred):
+                out.extend(self.eval_expr(e.value, env))
+            else:
+                out.append(self.eval_expr(e, env))
+        return out
+
     def expr_ListLit(self, node, env):
-        return [self.eval_expr(e, env) for e in node.elts]
+        return self._expand_elts(node.elts, env)
 
     def expr_TupleLit(self, node, env):
-        return tuple(self.eval_expr(e, env) for e in node.elts)
+        return tuple(self._expand_elts(node.elts, env))
 
     def expr_DictLit(self, node, env):
-        return {self.eval_expr(k, env): self.eval_expr(v, env) for k, v in node.pairs}
+        out = {}
+        for k, v in node.pairs:
+            if k is None:
+                out.update(self.eval_expr(v, env))
+            else:
+                out[self.eval_expr(k, env)] = self.eval_expr(v, env)
+        return out
 
     def expr_SetLit(self, node, env):
-        return {self.eval_expr(e, env) for e in node.elts}
+        return set(self._expand_elts(node.elts, env))
 
     def expr_ListComp(self, node, env):
         out = []

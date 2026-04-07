@@ -66,11 +66,23 @@ class Compare(Node):
     def __repr__(self): return f"Compare({self.op!r}, {self.left}, {self.right})"
 
 
+class Starred(Node):
+    """*expr — used in call args, literals, assignment targets."""
+    def __init__(self, value): self.value = value
+    def __repr__(self): return f"Starred({self.value})"
+
+
+class DoubleStarred(Node):
+    """**expr — used in call kwargs, dict literals."""
+    def __init__(self, value): self.value = value
+    def __repr__(self): return f"DoubleStarred({self.value})"
+
+
 class Call(Node):
     def __init__(self, func, args, kwargs=None):
         self.func = func
-        self.args = args         # list[expr]
-        self.kwargs = kwargs or []  # list[(name, expr)]
+        self.args = args         # list[expr | Starred]
+        self.kwargs = kwargs or []  # list[(name|None, expr)] — name=None means **expr
     def __repr__(self): return f"Call({self.func}, {self.args}, {self.kwargs})"
 
 
