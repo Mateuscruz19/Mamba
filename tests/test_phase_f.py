@@ -126,5 +126,44 @@ class OptionalChainingTests(unittest.TestCase):
         self.assertEqual(run_mamba(src), "default\n")
 
 
+class MatchExprTests(unittest.TestCase):
+    def test_basic_int_match(self):
+        src = (
+            "def f(x):\n"
+            "    return match x { 1 => 'a', 2 => 'b', _ => 'z' }\n"
+            "print(f(1))\n"
+            "print(f(2))\n"
+            "print(f(99))\n"
+        )
+        self.assertEqual(run_mamba(src), "a\nb\nz\n")
+
+    def test_string_match(self):
+        src = (
+            "print(match 'pt' { 'en' => 1, 'pt' => 2, _ => 0 })\n"
+        )
+        self.assertEqual(run_mamba(src), "2\n")
+
+    def test_match_in_expression_position(self):
+        src = "print((match 3 { 3 => 30, _ => 0 }) + 5)\n"
+        self.assertEqual(run_mamba(src), "35\n")
+
+    def test_no_match_raises(self):
+        src = "print(match 5 { 1 => 'a', 2 => 'b' })\n"
+        with self.assertRaises(ValueError):
+            run_mamba(src)
+
+    def test_match_none(self):
+        src = "print(match None { None => 'nil', _ => 'other' })\n"
+        self.assertEqual(run_mamba(src), "nil\n")
+
+    def test_match_evaluates_pattern_expr(self):
+        # patterns are full expressions, can reference variables
+        src = (
+            "k = 10\n"
+            "print(match 10 { k => 'eq', _ => 'no' })\n"
+        )
+        self.assertEqual(run_mamba(src), "eq\n")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -444,6 +444,33 @@ class Parser:
                 left = ast.Call(right, [left], [])
         return left
 
+    def match_expr(self):
+        """Mamba match expression:
+            match subject {
+                pattern => result,
+                _ => default,
+            }
+        Patterns are expressions compared with == against the subject;
+        `_` is a wildcard that always matches."""
+        self.expect(TokenType.MATCH)
+        subject = self.coalesce_expr()
+        self.expect(TokenType.LBRACE)
+        cases = []
+        while not self.check(TokenType.RBRACE):
+            if (self.check(TokenType.NAME) and self.cur.value == '_'
+                    and self.peek(1).type == TokenType.FATARROW):
+                self.advance()  # _
+                pat = None
+            else:
+                pat = self.coalesce_expr()
+            self.expect(TokenType.FATARROW)
+            result = self.expr()
+            cases.append((pat, result))
+            if not self.match(TokenType.COMMA):
+                break
+        self.expect(TokenType.RBRACE)
+        return ast.MatchExpr(subject, cases)
+
     def lambda_expr(self):
         self.expect(TokenType.LAMBDA)
         params, defaults = [], []
@@ -673,6 +700,8 @@ class Parser:
             self.advance(); return ast.NoneLit()
         if tok.type == TokenType.NAME:
             self.advance(); return ast.Name(tok.value)
+        if tok.type == TokenType.MATCH:
+            return self.match_expr()
         if tok.type == TokenType.LPAREN:
             self.advance()
             if self.match(TokenType.RPAREN):

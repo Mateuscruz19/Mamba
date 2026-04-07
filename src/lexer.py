@@ -79,6 +79,8 @@ class TokenType(Enum):
     NCOALESCE = auto()  # ??  (Mamba none-coalescing)
     QDOT = auto()       # ?.  (Mamba optional chaining attribute)
     QLBRACK = auto()    # ?[  (Mamba optional chaining subscript)
+    FATARROW = auto()   # =>  (Mamba match arm)
+    MATCH = auto()      # match keyword
     # special
     EOF = auto()
 
@@ -117,6 +119,7 @@ KEYWORDS = {
     'nonlocal': TokenType.NONLOCAL,
     'assert': TokenType.ASSERT,
     'del': TokenType.DEL,
+    'match': TokenType.MATCH,
 }
 
 
@@ -403,6 +406,10 @@ class Lexer:
             ch = self.current_char
 
             # Two-character operators first
+            if ch == '=' and self.peek() == '>':
+                tokens.append(Token(TokenType.FATARROW, '=>', self.line))
+                self.advance(); self.advance()
+                continue
             if ch == '=' and self.peek() == '=':
                 tokens.append(Token(TokenType.EQ, '==', self.line))
                 self.advance(); self.advance()

@@ -1170,6 +1170,15 @@ class Interpreter:
             return self.eval_expr(node.body, env)
         return self.eval_expr(node.orelse, env)
 
+    def expr_MatchExpr(self, node, env):
+        subject = self.eval_expr(node.subject, env)
+        for pat, result in node.cases:
+            if pat is None:  # wildcard `_`
+                return self.eval_expr(result, env)
+            if self.eval_expr(pat, env) == subject:
+                return self.eval_expr(result, env)
+        raise ValueError(f"no match arm matched {subject!r}")
+
     def expr_NoneCoalesce(self, node, env):
         left = self.eval_expr(node.left, env)
         if left is not None:

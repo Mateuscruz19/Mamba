@@ -107,6 +107,15 @@ class NoneCoalesce(Node):
     def __repr__(self): return f"NoneCoalesce({self.left}, {self.right})"
 
 
+class MatchExpr(Node):
+    """match subject { pat => result, ..., _ => default }
+    pattern of None means wildcard `_`."""
+    def __init__(self, subject, cases):
+        self.subject = subject
+        self.cases = cases  # list[(pattern_expr_or_None, result_expr)]
+    def __repr__(self): return f"MatchExpr({self.subject}, {self.cases})"
+
+
 class IfExpr(Node):
     def __init__(self, body, test, orelse):
         self.body = body
