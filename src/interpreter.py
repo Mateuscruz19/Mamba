@@ -674,6 +674,68 @@ BUILTINS = {
 
 # ---------- interpreter ----------
 
+def _make_mamba_decorators(interp):
+    """Mamba's batteries-included decorators: @memo, @retry, @trace.
+    Each is callable directly (`@memo`) or with config (`@retry(times=3)`)."""
+
+    def memo(fn):
+        """Memoize a function on positional+kwarg key. Cache lives forever."""
+        cache = {}
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            if key in cache:
+                return cache[key]
+            result = interp.call_value(fn, list(args), dict(kwargs))
+            cache[key] = result
+            return result
+        wrapper.__name__ = (
+            fn.decl.name if isinstance(fn, Function)
+            else getattr(fn, '__name__', 'memo')
+        )
+        wrapper.__mamba_cache__ = cache
+        return wrapper
+
+    def trace(fn):
+        """Print call args and return value to stdout."""
+        name = (fn.decl.name if isinstance(fn, Function) else getattr(fn, '__name__', '<fn>'))
+        def wrapper(*args, **kwargs):
+            parts = [repr(a) for a in args]
+            parts += [f"{k}={v!r}" for k, v in kwargs.items()]
+            print(f"-> {name}({', '.join(parts)})")
+            result = interp.call_value(fn, list(args), dict(kwargs))
+            print(f"<- {name} = {result!r}")
+            return result
+        wrapper.__name__ = name
+        return wrapper
+
+    def retry(*args, **kwargs):
+        """Retry a function on exception. Usable bare (`@retry`) or with
+        config (`@retry(times=5, on=ValueError)`)."""
+        # bare-form: @retry  →  args == (fn,), kwargs == {}
+        if len(args) == 1 and not kwargs and callable(args[0]):
+            return _retry_wrap(args[0], times=3, on=Exception)
+        times = kwargs.get('times', 3)
+        on = kwargs.get('on', Exception)
+        def deco(fn):
+            return _retry_wrap(fn, times=times, on=on)
+        return deco
+
+    def _retry_wrap(fn, times, on):
+        name = (fn.decl.name if isinstance(fn, Function) else getattr(fn, '__name__', '<fn>'))
+        def wrapper(*a, **kw):
+            last = None
+            for _ in range(times):
+                try:
+                    return interp.call_value(fn, list(a), dict(kw))
+                except on as e:
+                    last = e
+            raise last
+        wrapper.__name__ = name
+        return wrapper
+
+    return {'memo': memo, 'trace': trace, 'retry': retry}
+
+
 def _make_super(interp):
     def _super(*args):
         if len(args) == 0:
@@ -696,6 +758,8 @@ class Interpreter:
         self._module_cache = {}
         self.method_stack = []  # list[(defining_class, instance)]
         self.globals.set('super', _make_super(self))
+        for name, val in _make_mamba_decorators(self).items():
+            self.globals.set(name, val)
 
     def run(self, module: ast.Module):
         self.exec_block(module.body, self.globals)

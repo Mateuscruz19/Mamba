@@ -165,5 +165,71 @@ class MatchExprTests(unittest.TestCase):
         self.assertEqual(run_mamba(src), "eq\n")
 
 
+class BuiltinDecoratorTests(unittest.TestCase):
+    def test_memo_caches(self):
+        src = (
+            "calls = [0]\n"
+            "@memo\n"
+            "def f(x):\n"
+            "    calls[0] += 1\n"
+            "    return x * 2\n"
+            "print(f(5))\n"
+            "print(f(5))\n"
+            "print(f(5))\n"
+            "print(calls[0])\n"
+        )
+        self.assertEqual(run_mamba(src), "10\n10\n10\n1\n")
+
+    def test_memo_speedup_recursion(self):
+        # naive fib(25) without memo would still finish but slowly;
+        # we just want to verify correctness through caching
+        src = (
+            "@memo\n"
+            "def fib(n):\n"
+            "    if n < 2:\n"
+            "        return n\n"
+            "    return fib(n-1) + fib(n-2)\n"
+            "print(fib(25))\n"
+        )
+        self.assertEqual(run_mamba(src), "75025\n")
+
+    def test_trace_prints_call_and_return(self):
+        src = (
+            "@trace\n"
+            "def add(a, b):\n"
+            "    return a + b\n"
+            "add(2, 3)\n"
+        )
+        out = run_mamba(src)
+        self.assertIn("-> add(2, 3)", out)
+        self.assertIn("<- add = 5", out)
+
+    def test_retry_succeeds_eventually(self):
+        src = (
+            "calls = [0]\n"
+            "@retry(times=4)\n"
+            "def flaky():\n"
+            "    calls[0] += 1\n"
+            "    if calls[0] < 3:\n"
+            "        raise ValueError('nope')\n"
+            "    return 'ok'\n"
+            "print(flaky())\n"
+            "print(calls[0])\n"
+        )
+        self.assertEqual(run_mamba(src), "ok\n3\n")
+
+    def test_retry_bare_form(self):
+        src = (
+            "@retry\n"
+            "def boom():\n"
+            "    raise RuntimeError('always')\n"
+            "try:\n"
+            "    boom()\n"
+            "except RuntimeError as e:\n"
+            "    print('gave up')\n"
+        )
+        self.assertEqual(run_mamba(src), "gave up\n")
+
+
 if __name__ == "__main__":
     unittest.main()
