@@ -405,17 +405,32 @@ class Parser:
             TokenType.IS: 'is',
             TokenType.IN: 'in',
         }
-        # `not in` — peek a NOT followed by IN
-        if self.check(TokenType.NOT) and self.peek(1).type == TokenType.IN:
-            self.advance(); self.advance()
-            return ast.Compare('not in', left, self.add())
-        if self.cur.type in cmp_map:
-            op = cmp_map[self.advance().type]
-            if op == 'is' and self.match(TokenType.NOT):
-                op = 'is not'
-            right = self.add()
-            left = ast.Compare(op, left, right)
-        return left
+        comparisons = []  # list of (op, right)
+        while True:
+            if self.check(TokenType.NOT) and self.peek(1).type == TokenType.IN:
+                self.advance(); self.advance()
+                comparisons.append(('not in', self.add()))
+                continue
+            if self.cur.type in cmp_map:
+                op = cmp_map[self.advance().type]
+                if op == 'is' and self.match(TokenType.NOT):
+                    op = 'is not'
+                comparisons.append((op, self.add()))
+                continue
+            break
+        if not comparisons:
+            return left
+        if len(comparisons) == 1:
+            op, right = comparisons[0]
+            return ast.Compare(op, left, right)
+        # Build (a OP1 b) and (b OP2 c) and ...
+        result = None
+        prev = left
+        for op, right in comparisons:
+            piece = ast.Compare(op, prev, right)
+            result = piece if result is None else ast.BoolOp('and', result, piece)
+            prev = right
+        return result
 
     def add(self):
         left = self.mul()
