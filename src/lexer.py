@@ -157,6 +157,28 @@ class Lexer:
         while self.current_char is not None and self.current_char != '\n':
             self.advance()
 
+    def skip_block_comment(self):
+        """Skip /* ... */ — supports nesting and multi-line."""
+        # we're sitting on the '/'; consume '/' and '*'
+        self.advance(); self.advance()
+        depth = 1
+        while self.current_char is not None and depth > 0:
+            if self.current_char == '/' and self.peek() == '*':
+                self.advance(); self.advance()
+                depth += 1
+                continue
+            if self.current_char == '*' and self.peek() == '/':
+                self.advance(); self.advance()
+                depth -= 1
+                continue
+            if self.current_char == '\n':
+                self.line += 1
+            self.advance()
+        if depth > 0:
+            raise SyntaxError(
+                f"Unterminated block comment starting near line {self.line}"
+            )
+
     def read_number(self):
         """Read a full number (int or float)."""
         result = ''
@@ -314,6 +336,11 @@ class Lexer:
             # Comments
             if self.current_char == '#':
                 self.skip_comment()
+                continue
+
+            # Block comments /* ... */ (Mamba extension)
+            if self.current_char == '/' and self.peek() == '*':
+                self.skip_block_comment()
                 continue
 
             # Line continuation: backslash before newline
