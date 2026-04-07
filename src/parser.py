@@ -52,6 +52,18 @@ class Parser:
             )
         return self.advance()
 
+    def type_expr(self):
+        """Parse a type annotation. Supports `T1 | T2 | T3` unions on top
+        of arbitrary `or_expr` (so `list[int]`, `Optional[X]`, user classes,
+        etc. all work)."""
+        first = self.or_expr()
+        if not self.check(TokenType.BITOR):
+            return first
+        options = [first]
+        while self.match(TokenType.BITOR):
+            options.append(self.or_expr())
+        return ast.UnionType(options)
+
     def _hint_for_expect(self, expected, got):
         # COLON missing after if/while/for/def/class/try/except/else/elif
         if expected == TokenType.COLON:
@@ -166,7 +178,7 @@ class Parser:
         e = self.expr()
         # `name: type [= value]` annotated assignment
         if isinstance(e, ast.Name) and self.match(TokenType.COLON):
-            ann = self.or_expr()
+            ann = self.type_expr()
             value = None
             if self.match(TokenType.ASSIGN):
                 value = self.expr()
@@ -324,7 +336,7 @@ class Parser:
         self.expect(TokenType.RPAREN)
         return_type = None
         if self.match(TokenType.ARROW):
-            return_type = self.or_expr()
+            return_type = self.type_expr()
         self.expect(TokenType.COLON)
         body = self.block()
         return ast.FunctionDef(name, params, defaults, vararg, kwarg, body,
@@ -342,7 +354,7 @@ class Parser:
         name = self.expect(TokenType.NAME).value
         ann = None
         if self.match(TokenType.COLON):
-            ann = self.or_expr()
+            ann = self.type_expr()
         default = None
         if self.match(TokenType.ASSIGN):
             default = self.expr()
@@ -675,7 +687,7 @@ class Parser:
         return gens
 
     def _parse_subscript(self):
-        # supports: expr | [expr]:[expr][:[expr]]
+        # supports: expr | [expr]:[expr][:[expr]] | expr, expr, ... (tuple)
         start = stop = step = None
         is_slice = False
         if not self.check(TokenType.COLON):
@@ -689,6 +701,14 @@ class Parser:
                     step = self.expr()
         if is_slice:
             return ast.Slice(start, stop, step)
+        # Comma-separated → tuple index, used for generics like dict[str, int]
+        if self.check(TokenType.COMMA):
+            elts = [start]
+            while self.match(TokenType.COMMA):
+                if self.check(TokenType.RBRACK):
+                    break
+                elts.append(self.expr())
+            return ast.TupleLit(elts)
         return start
 
     def atom(self):

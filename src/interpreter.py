@@ -147,6 +147,10 @@ class Function:
         n_params = len(decl.params)
         positional = list(args)
 
+        # In strict mode, enforce annotations on every call without @typed.
+        if interp is not None and getattr(interp, 'strict_types', False):
+            self._strict_check(interp, positional, kwargs)
+
         # Bind positionals to params
         n_pos_to_bind = min(len(positional), n_params)
         for i in range(n_pos_to_bind):
@@ -194,8 +198,44 @@ class Function:
         try:
             interp.exec_block(decl.body, env)
         except ReturnSignal as r:
-            return r.value
+            value = r.value
+            if (interp is not None and getattr(interp, 'strict_types', False)
+                    and decl.return_type is not None):
+                t = interp.eval_expr(decl.return_type, self.closure)
+                if not _isinst(value, t):
+                    raise TypeError(
+                        f"{decl.name}() returned {type(value).__name__}, "
+                        f"expected {_type_name(t)}"
+                    )
+            return value
         return None
+
+    def _strict_check(self, interp, positional, kwargs):
+        decl = self.decl
+        ptypes = decl.param_types or [None] * len(decl.params)
+        for i, val in enumerate(positional):
+            if i >= len(decl.params):
+                break
+            t_node = ptypes[i]
+            if t_node is None:
+                continue
+            t = interp.eval_expr(t_node, self.closure)
+            if not _isinst(val, t):
+                raise TypeError(
+                    f"{decl.name}(): argument {decl.params[i]!r} expected "
+                    f"{_type_name(t)}, got {type(val).__name__}"
+                )
+        for k, val in kwargs.items():
+            if k in decl.params:
+                t_node = ptypes[decl.params.index(k)]
+                if t_node is None:
+                    continue
+                t = interp.eval_expr(t_node, self.closure)
+                if not _isinst(val, t):
+                    raise TypeError(
+                        f"{decl.name}(): argument {k!r} expected "
+                        f"{_type_name(t)}, got {type(val).__name__}"
+                    )
 
 
 class BoundMethod:
@@ -735,12 +775,50 @@ def _branch_sig(types, fn):
 
 
 def _type_name(t):
+    if t is None or t is type(None):
+        return "None"
+    if isinstance(t, tuple):
+        return " | ".join(_type_name(x) for x in t)
     if isinstance(t, MambaClass):
         return t.name
+    import types as _types
+    if isinstance(t, _types.UnionType):
+        return " | ".join(_type_name(x) for x in t.__args__)
+    if isinstance(t, _types.GenericAlias):
+        inner = ", ".join(_type_name(x) for x in t.__args__)
+        return f"{_type_name(t.__origin__)}[{inner}]"
     return getattr(t, '__name__', repr(t))
 
 
 def _isinst(value, type_):
+    # None used as a type annotation means NoneType
+    if type_ is None:
+        return value is None
+    # Union expressed as a Python tuple of types
+    if isinstance(type_, tuple):
+        return any(_isinst(value, t) for t in type_)
+    # types.UnionType (`int | str` evaluated by Python directly)
+    import types as _types
+    if isinstance(type_, _types.UnionType):
+        return any(_isinst(value, t) for t in type_.__args__)
+    # Parameterized generics: list[int], dict[str, int], tuple[int, ...]
+    if isinstance(type_, _types.GenericAlias):
+        origin = type_.__origin__
+        args = type_.__args__
+        if not isinstance(value, origin):
+            return False
+        if origin in (list, set, frozenset):
+            return all(_isinst(v, args[0]) for v in value)
+        if origin is tuple:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return all(_isinst(v, args[0]) for v in value)
+            if len(value) != len(args):
+                return False
+            return all(_isinst(v, t) for v, t in zip(value, args))
+        if origin is dict:
+            return all(_isinst(k, args[0]) and _isinst(v, args[1])
+                       for k, v in value.items())
+        return True  # unknown origin: container check is enough
     if isinstance(type_, MambaClass):
         return (isinstance(value, MambaInstance)
                 and value._class.is_subclass_of(type_))
@@ -906,7 +984,8 @@ def _make_super(interp):
 
 
 class Interpreter:
-    def __init__(self, file=None):
+    def __init__(self, file=None, strict_types=False):
+        self.strict_types = strict_types
         self.globals = Environment()
         for name, val in BUILTINS.items():
             self.globals.set(name, val)
@@ -1406,6 +1485,15 @@ class Interpreter:
             if self.eval_expr(pat, env) == subject:
                 return self.eval_expr(result, env)
         raise ValueError(f"no match arm matched {subject!r}")
+
+    def expr_UnionType(self, node, env):
+        # In annotation context: evaluate each option and bundle as a tuple
+        # so _isinst can short-circuit through them. None becomes type(None).
+        out = []
+        for opt in node.options:
+            v = self.eval_expr(opt, env)
+            out.append(type(None) if v is None else v)
+        return tuple(out)
 
     def expr_NoneCoalesce(self, node, env):
         left = self.eval_expr(node.left, env)

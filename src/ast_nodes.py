@@ -250,6 +250,12 @@ class FunctionDef(Node):
     def __repr__(self): return f"FunctionDef({self.name}, {self.params})"
 
 
+class UnionType(Node):
+    """Type union: T1 | T2 | T3 — only valid in annotation context."""
+    def __init__(self, options): self.options = options  # list[expr]
+    def __repr__(self): return f"UnionType({self.options})"
+
+
 class AnnAssign(Node):
     """name: type = value   — value may be None for bare annotation."""
     def __init__(self, target, annotation, value):

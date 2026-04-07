@@ -124,5 +124,145 @@ class TypedDecoratorTests(unittest.TestCase):
             run_mamba(src)
 
 
+class UnionTypeTests(unittest.TestCase):
+    def test_union_accepts_either(self):
+        src = (
+            "@typed\n"
+            "def f(x: int | str) -> int:\n"
+            "    if isinstance(x, int):\n"
+            "        return x\n"
+            "    return len(x)\n"
+            "print(f(5))\n"
+            "print(f('hello'))\n"
+        )
+        self.assertEqual(run_mamba(src), "5\n5\n")
+
+    def test_union_rejects_other(self):
+        src = (
+            "@typed\n"
+            "def f(x: int | str) -> int:\n"
+            "    return 0\n"
+            "f([1, 2])\n"
+        )
+        with self.assertRaises(TypeError):
+            run_mamba(src)
+
+    def test_three_way_union(self):
+        src = (
+            "@typed\n"
+            "def f(x: int | str | bool) -> int:\n"
+            "    return 1\n"
+            "print(f(1))\n"
+            "print(f('a'))\n"
+            "print(f(True))\n"
+        )
+        self.assertEqual(run_mamba(src), "1\n1\n1\n")
+
+    def test_optional_via_none_union(self):
+        src = (
+            "@typed\n"
+            "def maybe(x: int | None) -> str:\n"
+            "    if x is None:\n"
+            "        return 'nothing'\n"
+            "    return 'got'\n"
+            "print(maybe(7))\n"
+            "print(maybe(None))\n"
+        )
+        self.assertEqual(run_mamba(src), "got\nnothing\n")
+
+    def test_optional_rejects_wrong(self):
+        src = (
+            "@typed\n"
+            "def f(x: int | None) -> str:\n"
+            "    return 'ok'\n"
+            "f('nope')\n"
+        )
+        with self.assertRaises(TypeError):
+            run_mamba(src)
+
+
+class GenericTypeTests(unittest.TestCase):
+    def test_list_of_int_accepts(self):
+        src = (
+            "@typed\n"
+            "def total(xs: list[int]) -> int:\n"
+            "    s = 0\n"
+            "    for v in xs:\n"
+            "        s += v\n"
+            "    return s\n"
+            "print(total([1, 2, 3]))\n"
+        )
+        self.assertEqual(run_mamba(src), "6\n")
+
+    def test_list_of_int_rejects_mixed(self):
+        src = (
+            "@typed\n"
+            "def f(xs: list[int]) -> int:\n"
+            "    return 0\n"
+            "f([1, 'two', 3])\n"
+        )
+        with self.assertRaises(TypeError):
+            run_mamba(src)
+
+    def test_dict_str_to_int(self):
+        src = (
+            "@typed\n"
+            "def f(d: dict[str, int]) -> int:\n"
+            "    return d['k']\n"
+            "print(f({'k': 42}))\n"
+        )
+        self.assertEqual(run_mamba(src), "42\n")
+
+    def test_dict_rejects_wrong_value_type(self):
+        src = (
+            "@typed\n"
+            "def f(d: dict[str, int]) -> int:\n"
+            "    return 0\n"
+            "f({'k': 'not-int'})\n"
+        )
+        with self.assertRaises(TypeError):
+            run_mamba(src)
+
+
+class StrictModeTests(unittest.TestCase):
+    def test_strict_enforces_without_typed(self):
+        from src.lexer import Lexer as L
+        from src.parser import Parser as P
+        from src.interpreter import Interpreter as I
+        src = (
+            "def add(x: int, y: int) -> int:\n"
+            "    return x + y\n"
+            "add('a', 'b')\n"
+        )
+        with self.assertRaises(TypeError):
+            I(strict_types=True).run(P(L(src).tokenize()).parse())
+
+    def test_strict_passes_when_correct(self):
+        from src.lexer import Lexer as L
+        from src.parser import Parser as P
+        from src.interpreter import Interpreter as I
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            src = (
+                "def add(x: int, y: int) -> int:\n"
+                "    return x + y\n"
+                "print(add(2, 3))\n"
+            )
+            I(strict_types=True).run(P(L(src).tokenize()).parse())
+        self.assertEqual(buf.getvalue(), "5\n")
+
+    def test_strict_checks_return_type(self):
+        from src.lexer import Lexer as L
+        from src.parser import Parser as P
+        from src.interpreter import Interpreter as I
+        src = (
+            "def liar(x: int) -> str:\n"
+            "    return x\n"
+            "liar(5)\n"
+        )
+        with self.assertRaises(TypeError):
+            I(strict_types=True).run(P(L(src).tokenize()).parse())
+
+
 if __name__ == "__main__":
     unittest.main()

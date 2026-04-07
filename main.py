@@ -8,13 +8,14 @@ from src.errors import MambaError
 from src import ast_nodes as ast
 
 
-def run_file(path: str) -> None:
+def run_file(path: str, strict: bool = False) -> None:
     with open(path, 'r', encoding='utf-8') as f:
         source = f.read()
     try:
         tokens = Lexer(source).tokenize()
         tree = Parser(tokens, source=source, file=path).parse()
-        Interpreter(file=os.path.abspath(path)).run(tree)
+        Interpreter(file=os.path.abspath(path),
+                    strict_types=strict).run(tree)
     except MambaError as e:
         print(e.format(), file=sys.stderr)
         sys.exit(1)
@@ -50,8 +51,13 @@ def repl() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) > 1:
-        run_file(sys.argv[1])
+    args = sys.argv[1:]
+    strict = False
+    if '--strict' in args:
+        strict = True
+        args.remove('--strict')
+    if args:
+        run_file(args[0], strict=strict)
     else:
         repl()
 

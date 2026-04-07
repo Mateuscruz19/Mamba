@@ -82,6 +82,7 @@ class TokenType(Enum):
     FATARROW = auto()   # =>  (Mamba match arm)
     MATCH = auto()      # match keyword
     ARROW = auto()      # ->  (Mamba return-type annotation)
+    BITOR = auto()      # |   (bitwise OR / type union in annotations)
     # special
     EOF = auto()
 
@@ -442,6 +443,10 @@ class Lexer:
             if ch == '|' and self.peek() == '>':
                 tokens.append(Token(TokenType.PIPE, '|>', self.line))
                 self.advance(); self.advance()
+                continue
+            if ch == '|':
+                tokens.append(Token(TokenType.BITOR, '|', self.line))
+                self.advance()
                 continue
             if ch == '?' and self.peek() == '?':
                 tokens.append(Token(TokenType.NCOALESCE, '??', self.line))
