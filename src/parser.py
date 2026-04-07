@@ -399,13 +399,42 @@ class Parser:
     def expr(self):
         if self.check(TokenType.LAMBDA):
             return self.lambda_expr()
-        node = self.or_expr()
+        node = self.pipe_expr()
         if self.match(TokenType.IF):
-            test = self.or_expr()
+            test = self.pipe_expr()
             self.expect(TokenType.ELSE)
             orelse = self.expr()
             return ast.IfExpr(node, test, orelse)
         return node
+
+    def pipe_expr(self):
+        """Mamba pipe operator. Three forms:
+
+          x |> f                  →  f(x)
+          x |> f(a, b)            →  f(a, b, x)        (append by default —
+                                                        matches Python stdlib
+                                                        like map/filter)
+          x |> f(_, b) / f(a, _)  →  every `_` in the args is replaced with x
+
+        Left-associative, low precedence."""
+        left = self.or_expr()
+        while self.match(TokenType.PIPE):
+            right = self.or_expr()
+            if isinstance(right, ast.Call):
+                # Look for a `_` placeholder in positional args.
+                placeholders = [
+                    i for i, a in enumerate(right.args)
+                    if isinstance(a, ast.Name) and a.name == '_'
+                ]
+                if placeholders:
+                    for i in placeholders:
+                        right.args[i] = left
+                else:
+                    right.args = right.args + [left]
+                left = right
+            else:
+                left = ast.Call(right, [left], [])
+        return left
 
     def lambda_expr(self):
         self.expect(TokenType.LAMBDA)

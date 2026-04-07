@@ -75,6 +75,7 @@ class TokenType(Enum):
     AT = auto()
     ASSERT = auto()
     DEL = auto()
+    PIPE = auto()  # |>  (Mamba pipe operator)
     # special
     EOF = auto()
 
@@ -411,6 +412,10 @@ class Lexer:
                 continue
             if ch == '/' and self.peek() == '/':
                 tokens.append(Token(TokenType.FLOORDIV, '//', self.line))
+                self.advance(); self.advance()
+                continue
+            if ch == '|' and self.peek() == '>':
+                tokens.append(Token(TokenType.PIPE, '|>', self.line))
                 self.advance(); self.advance()
                 continue
             two_char_aug = {
