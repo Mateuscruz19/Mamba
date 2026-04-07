@@ -164,6 +164,14 @@ class Parser:
 
         # expression or assignment (possibly with tuple unpacking)
         e = self.expr()
+        # `name: type [= value]` annotated assignment
+        if isinstance(e, ast.Name) and self.match(TokenType.COLON):
+            ann = self.or_expr()
+            value = None
+            if self.match(TokenType.ASSIGN):
+                value = self.expr()
+            self._expect_newline_or_block_end()
+            return ast.AnnAssign(e, ann, value)
         if self.check(TokenType.COMMA):
             elts = [e]
             while self.match(TokenType.COMMA):
@@ -306,18 +314,23 @@ class Parser:
         self.expect(TokenType.DEF)
         name = self.expect(TokenType.NAME).value
         self.expect(TokenType.LPAREN)
-        params, defaults, vararg, kwarg = [], [], None, None
+        params, defaults, ptypes, vararg, kwarg = [], [], [], None, None
         if not self.check(TokenType.RPAREN):
-            self._parse_param(params, defaults, vararg_kwarg := [None, None])
+            self._parse_param(params, defaults, ptypes,
+                              vararg_kwarg := [None, None])
             while self.match(TokenType.COMMA):
-                self._parse_param(params, defaults, vararg_kwarg)
+                self._parse_param(params, defaults, ptypes, vararg_kwarg)
             vararg, kwarg = vararg_kwarg
         self.expect(TokenType.RPAREN)
+        return_type = None
+        if self.match(TokenType.ARROW):
+            return_type = self.or_expr()
         self.expect(TokenType.COLON)
         body = self.block()
-        return ast.FunctionDef(name, params, defaults, vararg, kwarg, body)
+        return ast.FunctionDef(name, params, defaults, vararg, kwarg, body,
+                               param_types=ptypes, return_type=return_type)
 
-    def _parse_param(self, params, defaults, vararg_kwarg):
+    def _parse_param(self, params, defaults, ptypes, vararg_kwarg):
         if self.match(TokenType.POWER):
             vararg_kwarg[1] = self.expect(TokenType.NAME).value
             return
@@ -327,11 +340,15 @@ class Parser:
         if vararg_kwarg[0] is not None or vararg_kwarg[1] is not None:
             raise self.error("positional parameter after *args/**kwargs")
         name = self.expect(TokenType.NAME).value
+        ann = None
+        if self.match(TokenType.COLON):
+            ann = self.or_expr()
         default = None
         if self.match(TokenType.ASSIGN):
             default = self.expr()
         params.append(name)
         defaults.append(default)
+        ptypes.append(ann)
 
     def class_def(self):
         self.expect(TokenType.CLASS)

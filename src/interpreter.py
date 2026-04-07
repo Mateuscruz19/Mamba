@@ -731,7 +731,13 @@ def _branch_sig(types, fn):
         nparams = '?'
     if types is None:
         return f"arity={nparams}"
-    return "(" + ", ".join(getattr(t, '__name__', repr(t)) for t in types) + ")"
+    return "(" + ", ".join(_type_name(t) for t in types) + ")"
+
+
+def _type_name(t):
+    if isinstance(t, MambaClass):
+        return t.name
+    return getattr(t, '__name__', repr(t))
 
 
 def _isinst(value, type_):
@@ -836,7 +842,54 @@ def _make_mamba_decorators(interp):
         group.add(types, fn)
         return group
 
-    return {'memo': memo, 'trace': trace, 'retry': retry, 'overload': overload}
+    def typed(fn):
+        """Enforce a function's type annotations at call time. Unannotated
+        parameters are skipped. The return type, if annotated, is checked
+        against the actual return value."""
+        if not isinstance(fn, Function):
+            raise TypeError("@typed can only wrap a Mamba function")
+        decl = fn.decl
+        # Pre-evaluate annotations once, in the function's closure scope, so
+        # the types resolve against names visible where the def lives.
+        env = fn.closure
+        param_types = [
+            interp.eval_expr(t, env) if t is not None else None
+            for t in (decl.param_types or [None] * len(decl.params))
+        ]
+        return_type = (interp.eval_expr(decl.return_type, env)
+                       if decl.return_type is not None else None)
+
+        def wrapper(*args, **kwargs):
+            for i, (val, t) in enumerate(zip(args, param_types)):
+                if t is not None and not _isinst(val, t):
+                    pname = decl.params[i] if i < len(decl.params) else f"arg{i}"
+                    tname = _type_name(t)
+                    raise TypeError(
+                        f"{decl.name}(): argument {pname!r} expected "
+                        f"{tname}, got {type(val).__name__}"
+                    )
+            for k, val in kwargs.items():
+                if k in decl.params:
+                    t = param_types[decl.params.index(k)]
+                    if t is not None and not _isinst(val, t):
+                        tname = _type_name(t)
+                        raise TypeError(
+                            f"{decl.name}(): argument {k!r} expected "
+                            f"{tname}, got {type(val).__name__}"
+                        )
+            result = interp.call_value(fn, list(args), dict(kwargs))
+            if return_type is not None and not _isinst(result, return_type):
+                tname = _type_name(return_type)
+                raise TypeError(
+                    f"{decl.name}() returned {type(result).__name__}, "
+                    f"expected {tname}"
+                )
+            return result
+        wrapper.__name__ = decl.name
+        return wrapper
+
+    return {'memo': memo, 'trace': trace, 'retry': retry,
+            'overload': overload, 'typed': typed}
 
 
 def _make_super(interp):
@@ -969,6 +1022,13 @@ class Interpreter:
     def stmt_Return(self, node, env):
         value = self.eval_expr(node.value, env) if node.value is not None else None
         raise ReturnSignal(value)
+
+    def stmt_AnnAssign(self, node, env):
+        # Type annotation: stored but not enforced unless @typed wraps a fn.
+        # `x: int = 5`  → assigns 5; `x: int` alone is a no-op declaration.
+        if node.value is not None:
+            value = self.eval_expr(node.value, env)
+            env.set(node.target.name, value)
 
     def stmt_Assert(self, node, env):
         if not self.truthy(self.eval_expr(node.test, env)):

@@ -81,6 +81,7 @@ class TokenType(Enum):
     QLBRACK = auto()    # ?[  (Mamba optional chaining subscript)
     FATARROW = auto()   # =>  (Mamba match arm)
     MATCH = auto()      # match keyword
+    ARROW = auto()      # ->  (Mamba return-type annotation)
     # special
     EOF = auto()
 
@@ -406,6 +407,10 @@ class Lexer:
             ch = self.current_char
 
             # Two-character operators first
+            if ch == '-' and self.peek() == '>':
+                tokens.append(Token(TokenType.ARROW, '->', self.line))
+                self.advance(); self.advance()
+                continue
             if ch == '=' and self.peek() == '>':
                 tokens.append(Token(TokenType.FATARROW, '=>', self.line))
                 self.advance(); self.advance()

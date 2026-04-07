@@ -236,15 +236,27 @@ class While(Node):
 
 
 class FunctionDef(Node):
-    def __init__(self, name, params, defaults, vararg, kwarg, body, decorators=None):
+    def __init__(self, name, params, defaults, vararg, kwarg, body,
+                 decorators=None, param_types=None, return_type=None):
         self.name = name
         self.params = params      # list[str]
         self.defaults = defaults  # list[expr|None] aligned with params
-        self.vararg = vararg      # str or None
-        self.kwarg = kwarg        # str or None
+        self.vararg = vararg
+        self.kwarg = kwarg
         self.body = body
         self.decorators = decorators or []
+        self.param_types = param_types or [None] * len(params)
+        self.return_type = return_type
     def __repr__(self): return f"FunctionDef({self.name}, {self.params})"
+
+
+class AnnAssign(Node):
+    """name: type = value   — value may be None for bare annotation."""
+    def __init__(self, target, annotation, value):
+        self.target = target
+        self.annotation = annotation
+        self.value = value
+    def __repr__(self): return f"AnnAssign({self.target}: {self.annotation} = {self.value})"
 
 
 class AugAssign(Node):
