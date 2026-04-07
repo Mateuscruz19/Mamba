@@ -199,14 +199,24 @@ class Lexer:
         return Token(TokenType.NUMBER, int(result), self.line)
 
     def read_string(self):
-        """Read a string literal between quotes."""
+        """Read a string literal between quotes, processing escape sequences."""
         quote_char = self.current_char  # remembers if it was ' or "
         self.advance()  # skip the opening quote
         result = ''
+        escapes = {'n': '\n', 't': '\t', 'r': '\r', '0': '\0',
+                   '\\': '\\', "'": "'", '"': '"'}
 
         while self.current_char is not None and self.current_char != quote_char:
-            result += self.current_char
-            self.advance()
+            if self.current_char == '\\':
+                self.advance()
+                ch = self.current_char
+                if ch is None:
+                    break
+                result += escapes.get(ch, '\\' + ch)
+                self.advance()
+            else:
+                result += self.current_char
+                self.advance()
 
         if self.current_char is None:
             raise SyntaxError(f"Unterminated string on line {self.line}")
