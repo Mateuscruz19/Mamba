@@ -346,9 +346,16 @@ class MambaInstance:
         else:
             attr = None
         if attr is None:
-            raise AttributeError(
-                f"'{self._class.name}' object has no attribute {name!r}"
-            )
+            from .errors import suggest
+            cands = set(self._fields.keys())
+            for c in self._class.mro:
+                if isinstance(c, MambaClass):
+                    cands.update(c.attrs.keys())
+            s = suggest(name, cands)
+            msg = f"'{self._class.name}' object has no attribute {name!r}"
+            if s:
+                msg += f". did you mean {s!r}?"
+            raise AttributeError(msg)
         if isinstance(attr, Function):
             return BoundMethod(attr, self, defining_class=defining)
         if isinstance(attr, StaticMethod):
@@ -1101,9 +1108,16 @@ class Interpreter:
             else:
                 v = None
             if v is None:
-                raise AttributeError(
-                    f"class {obj.name!r} has no attribute {node.attr!r}"
-                )
+                from .errors import suggest
+                cands = set()
+                for c in obj.mro:
+                    if isinstance(c, MambaClass):
+                        cands.update(c.attrs.keys())
+                s = suggest(node.attr, cands)
+                msg = f"class {obj.name!r} has no attribute {node.attr!r}"
+                if s:
+                    msg += f". did you mean {s!r}?"
+                raise AttributeError(msg)
             if isinstance(v, StaticMethod):
                 return v.func
             if isinstance(v, ClassMethod):
@@ -1114,7 +1128,17 @@ class Interpreter:
             return v
         if isinstance(obj, Module):
             return obj.get(node.attr)
-        return getattr(obj, node.attr)
+        try:
+            return getattr(obj, node.attr)
+        except AttributeError:
+            from .errors import suggest
+            cands = [n for n in dir(obj) if not n.startswith('_')]
+            s = suggest(node.attr, cands)
+            msg = (f"{type(obj).__name__!r} object has no attribute "
+                   f"{node.attr!r}")
+            if s:
+                msg += f". did you mean {s!r}?"
+            raise AttributeError(msg)
 
     def expr_Subscript(self, node, env):
         obj = self.eval_expr(node.obj, env)
