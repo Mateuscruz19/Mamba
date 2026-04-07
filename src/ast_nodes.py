@@ -238,6 +238,18 @@ class Nonlocal(Node):
     def __repr__(self): return f"Nonlocal({self.names})"
 
 
+class Assert(Node):
+    def __init__(self, test, msg):
+        self.test = test
+        self.msg = msg
+    def __repr__(self): return f"Assert({self.test}, {self.msg})"
+
+
+class Delete(Node):
+    def __init__(self, targets): self.targets = targets
+    def __repr__(self): return f"Delete({self.targets})"
+
+
 class Pass(Node):
     def __repr__(self): return "Pass"
 

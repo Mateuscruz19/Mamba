@@ -73,6 +73,8 @@ class TokenType(Enum):
     GLOBAL = auto()
     NONLOCAL = auto()
     AT = auto()
+    ASSERT = auto()
+    DEL = auto()
     # special
     EOF = auto()
 
@@ -109,6 +111,8 @@ KEYWORDS = {
     'with': TokenType.WITH,
     'global': TokenType.GLOBAL,
     'nonlocal': TokenType.NONLOCAL,
+    'assert': TokenType.ASSERT,
+    'del': TokenType.DEL,
 }
 
 

@@ -778,6 +778,34 @@ class Interpreter:
         value = self.eval_expr(node.value, env) if node.value is not None else None
         raise ReturnSignal(value)
 
+    def stmt_Assert(self, node, env):
+        if not self.truthy(self.eval_expr(node.test, env)):
+            msg = self.eval_expr(node.msg, env) if node.msg is not None else None
+            raise AssertionError(msg) if msg is not None else AssertionError()
+
+    def stmt_Delete(self, node, env):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if target.name in env.vars:
+                    del env.vars[target.name]
+                else:
+                    raise NameError(f"name {target.name!r} is not defined")
+            elif isinstance(target, ast.Attribute):
+                obj = self.eval_expr(target.obj, env)
+                if isinstance(obj, MambaInstance):
+                    if target.attr in obj._fields:
+                        del obj._fields[target.attr]
+                    else:
+                        raise AttributeError(target.attr)
+                else:
+                    delattr(obj, target.attr)
+            elif isinstance(target, ast.Subscript):
+                obj = self.eval_expr(target.obj, env)
+                idx = self._eval_index(target.index, env)
+                del obj[idx]
+            else:
+                raise TypeError(f"can't delete {type(target).__name__}")
+
     def stmt_Pass(self, node, env): pass
     def stmt_Break(self, node, env): raise BreakSignal()
     def stmt_Continue(self, node, env): raise ContinueSignal()

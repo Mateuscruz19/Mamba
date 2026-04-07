@@ -109,6 +109,21 @@ class Parser:
                 names.append(self.expect(TokenType.NAME).value)
             self.expect(TokenType.NEWLINE)
             return ctor(names)
+        if t == TokenType.ASSERT:
+            self.advance()
+            test = self.expr()
+            msg = None
+            if self.match(TokenType.COMMA):
+                msg = self.expr()
+            self.expect(TokenType.NEWLINE)
+            return ast.Assert(test, msg)
+        if t == TokenType.DEL:
+            self.advance()
+            targets = [self.expr()]
+            while self.match(TokenType.COMMA):
+                targets.append(self.expr())
+            self.expect(TokenType.NEWLINE)
+            return ast.Delete(targets)
         if t == TokenType.YIELD:
             self.advance()
             value = None
