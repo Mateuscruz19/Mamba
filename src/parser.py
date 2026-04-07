@@ -11,6 +11,7 @@ class Parser:
         self.pos = 0
         self.source = source
         self.file = file
+        self._block_lambda_consumed = False
 
     # ---------- helpers ----------
 
@@ -192,10 +193,10 @@ class Parser:
                         break
                     relts.append(self.expr())
                 value = ast.TupleLit(relts)
-            self.expect(TokenType.NEWLINE)
+            self._expect_newline_or_block_end()
             self._check_lvalue(e)
             return ast.Assign(e, value)
-        self.expect(TokenType.NEWLINE)
+        self._expect_newline_or_block_end()
         return ast.ExprStmt(e)
 
     def _check_lvalue(self, node):
@@ -420,8 +421,20 @@ class Parser:
                     self.expr() if self.match(TokenType.ASSIGN) else None
                 )
         self.expect(TokenType.COLON)
+        # Mamba extension: multi-line lambda body if a newline follows the
+        # colon, parse an indented block instead of a single expression.
+        if self.check(TokenType.NEWLINE):
+            body = self.block()
+            self._block_lambda_consumed = True
+            return ast.Lambda(params, defaults, body)
         body = self.expr()
         return ast.Lambda(params, defaults, body)
+
+    def _expect_newline_or_block_end(self):
+        if self._block_lambda_consumed:
+            self._block_lambda_consumed = False
+            return
+        self.expect(TokenType.NEWLINE)
 
     def or_expr(self):
         left = self.and_expr()

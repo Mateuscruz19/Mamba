@@ -1151,14 +1151,19 @@ class Interpreter:
         return self.eval_expr(node.orelse, env)
 
     def expr_Lambda(self, node, env):
-        body_stmt = ast.Return(node.body)
+        # body is either a single expression (classic lambda) or a list
+        # of statements (Mamba multi-line lambda extension).
+        if isinstance(node.body, list):
+            body_stmts = node.body
+        else:
+            body_stmts = [ast.Return(node.body)]
         decl = ast.FunctionDef(
             name='<lambda>',
             params=list(node.params),
             defaults=list(node.defaults),
             vararg=None,
             kwarg=None,
-            body=[body_stmt],
+            body=body_stmts,
         )
         return Function(decl, env, interp=self)
 
