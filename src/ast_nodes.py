@@ -98,6 +98,14 @@ class Yield(Node):
     def __repr__(self): return f"Yield({self.value})"
 
 
+class NoneCoalesce(Node):
+    """a ?? b — returns a if not None, else b. Short-circuits b."""
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+    def __repr__(self): return f"NoneCoalesce({self.left}, {self.right})"
+
+
 class IfExpr(Node):
     def __init__(self, body, test, orelse):
         self.body = body

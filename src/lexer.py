@@ -76,6 +76,7 @@ class TokenType(Enum):
     ASSERT = auto()
     DEL = auto()
     PIPE = auto()  # |>  (Mamba pipe operator)
+    NCOALESCE = auto()  # ??  (Mamba none-coalescing)
     # special
     EOF = auto()
 
@@ -426,6 +427,10 @@ class Lexer:
                 continue
             if ch == '|' and self.peek() == '>':
                 tokens.append(Token(TokenType.PIPE, '|>', self.line))
+                self.advance(); self.advance()
+                continue
+            if ch == '?' and self.peek() == '?':
+                tokens.append(Token(TokenType.NCOALESCE, '??', self.line))
                 self.advance(); self.advance()
                 continue
             two_char_aug = {

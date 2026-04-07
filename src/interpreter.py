@@ -1150,6 +1150,12 @@ class Interpreter:
             return self.eval_expr(node.body, env)
         return self.eval_expr(node.orelse, env)
 
+    def expr_NoneCoalesce(self, node, env):
+        left = self.eval_expr(node.left, env)
+        if left is not None:
+            return left
+        return self.eval_expr(node.right, env)
+
     def expr_Lambda(self, node, env):
         # body is either a single expression (classic lambda) or a list
         # of statements (Mamba multi-line lambda extension).

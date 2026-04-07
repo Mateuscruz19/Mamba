@@ -399,13 +399,21 @@ class Parser:
     def expr(self):
         if self.check(TokenType.LAMBDA):
             return self.lambda_expr()
-        node = self.pipe_expr()
+        node = self.coalesce_expr()
         if self.match(TokenType.IF):
-            test = self.pipe_expr()
+            test = self.coalesce_expr()
             self.expect(TokenType.ELSE)
             orelse = self.expr()
             return ast.IfExpr(node, test, orelse)
         return node
+
+    def coalesce_expr(self):
+        """a ?? b — left-associative, looser than pipe."""
+        left = self.pipe_expr()
+        while self.match(TokenType.NCOALESCE):
+            right = self.pipe_expr()
+            left = ast.NoneCoalesce(left, right)
+        return left
 
     def pipe_expr(self):
         """Mamba pipe operator. Three forms:

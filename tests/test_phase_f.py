@@ -58,5 +58,30 @@ class PipeOperatorTests(unittest.TestCase):
         self.assertEqual(run_mamba(src), "4\n")
 
 
+class NoneCoalesceTests(unittest.TestCase):
+    def test_left_not_none(self):
+        self.assertEqual(run_mamba("print(5 ?? 99)\n"), "5\n")
+
+    def test_left_none(self):
+        self.assertEqual(run_mamba("print(None ?? 99)\n"), "99\n")
+
+    def test_chained(self):
+        self.assertEqual(run_mamba("print(None ?? None ?? 'ok')\n"), "ok\n")
+
+    def test_short_circuits_right(self):
+        # right side must NOT be evaluated when left is not None
+        src = (
+            "def boom():\n"
+            "    raise ValueError('should not run')\n"
+            "print(7 ?? boom())\n"
+        )
+        self.assertEqual(run_mamba(src), "7\n")
+
+    def test_falsy_but_not_none_returns_left(self):
+        # 0, '', [] are falsy but NOT None — ?? must return them
+        self.assertEqual(run_mamba("print(0 ?? 99)\n"), "0\n")
+        self.assertEqual(run_mamba("print('' ?? 'x')\n"), "\n")
+
+
 if __name__ == "__main__":
     unittest.main()
